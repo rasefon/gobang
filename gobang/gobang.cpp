@@ -4,21 +4,31 @@
 #include "stdafx.h"
 #include <iostream>
 #include <map>
+#include <set>
 #include <stack>
 #include <string>
 #include <vector>
+#include <time.h>
 
 using namespace std;
 
+//#define DYM_EVAL
+
 #define POTENTIAL_GEP 2
 #define DEPTH = 5
+
 #define INDEX_KEY(i,j) (i*100+j)
+#define I_FROM_INDEX(index) (index/100)
+#define J_FROM_INDEX(index) (index%100)
+
 #define _INFINITE_ 2147483646
 #define _IMPOSSIBLE_ 2147483647
+
 #define PATTERN_NUM 33
 
 struct Step
 {
+   Step(){}
    Step(int ii, int jj):i(ii), j(jj) {}
    Step(const Step& step):i(step.i), j(step.j) {}
    int i;
@@ -33,6 +43,15 @@ struct StepScore
 
    StepScore(const Step& s1, const Step& s2, int s):
       step1(s1), step2(s2), score(s){}
+
+   StepScore(int s1_i, int s1_j, int s2_i, int s2_j, int s)
+   {
+      step1.i = s1_i;
+      step1.j = s1_j;
+      step2.i = s2_i;
+      step2.j = s2_j;
+      score = s;
+   }
 };
 
 class Board
@@ -40,12 +59,7 @@ class Board
 private:
    char m_bb[15][15];
    // available for certain grid?
-   map<int, bool> m_grid_status;
-
-   int m_max_right;
-   int m_min_left;
-   int m_min_top;
-   int m_max_buttom;
+   map<int, bool> m_grid_available;
 
    int m_left;
    int m_right;
@@ -59,18 +73,24 @@ private:
    int m_step_index;
    Step *m_pre_step;
 
+#ifdef DYM_EVAL
    //cache previous step score.
    int m_pre_horizontal_score[15];
    int m_pre_vertical_score[15];
    int m_pre_diagonal_slash[21];
    int m_pre_diagonal_backslash[21];
+#endif
+
+   // steps, computed from INDEX_KEY macro.  
+   set<int> m_step_list;
 public:
    Board();
    Board(const Board& other);
+   Board& operator= (const Board& other);
    ~Board();
    // '-' empty, 'o' white, 'x' black
    void update_grid_status(int i, int j, char grid);
-   void get_next_steps(vector<Step*>& steps, char grid);
+   void get_next_steps(set<int>& steps, char grid);
 
    // positive score for black and negative score for white.
    int eval_board();
@@ -86,7 +106,8 @@ public:
 
    void print_board();
 private:
-   void update_next_step_range();
+   void get_steps_from_center_step(int i, int j, char grid, vector<int>& steps);
+   void copy_from_other(const Board& other);
 };
 
 //////////////global variables/////////////////////////
@@ -116,7 +137,7 @@ static char* s_white_patterns[] = {
 };
 
 static int s_positive_score[] = {
-   _INFINITE_,
+   100000,
    50000,
    10000, 10000, 10000, 10000, 10000,
    5000, 5000, 5000, 5000,
@@ -132,18 +153,15 @@ static int s_pattern_len[PATTERN_NUM];
 static void compute_failure_function()
 {
    //first allocate failure function array.
-   for (int i = 0; i < PATTERN_NUM; i++) 
-   {
+   for (int i = 0; i < PATTERN_NUM; i++) {
       int len = strlen(s_black_patterns[i]);
       s_pattern_len[i] = len;
       s_failure_function[i] = new int[len];
       s_failure_function[i][0] = 0;
       int k = 0;
 
-      for (int q = 1; q < len; q++) 
-      {
-         while (k>0 && s_black_patterns[i][k]!=s_black_patterns[i][q]) 
-         {
+      for (int q = 1; q < len; q++) {
+         while (k>0 && s_black_patterns[i][k]!=s_black_patterns[i][q]) {
             if (s_failure_function[i][k] == 0) 
                k = 0;
             else 
@@ -167,22 +185,19 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
    int pattern_matched = 0;
    int q = 0; // pattern index;
    int p = 0; // target index;
-   while (p < target_len)
-   {
+   while (p < target_len) {
       while (target[p] != pattern[q] && p < target_len)
          p++;
 
       if (p == target_len)
          return pattern_matched;
 
-      while (target[p] == pattern[q] && q != pattern_len-1)
-      {
+      while (target[p] == pattern[q] && q != pattern_len-1) {
          p++;
          q++;
       }
 
-      if (target[p] == pattern[q] && q == pattern_len-1)
-      {
+      if (target[p] == pattern[q] && q == pattern_len-1) {
          pattern_matched++;
       }
 
@@ -196,64 +211,55 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
 
 Board::~Board()
 {
-   m_grid_status.clear();
-   if (m_pre_step) 
-   {
+   m_grid_available.clear();
+   if (m_pre_step) {
       delete m_pre_step;
       m_pre_step = nullptr;
    }
 }
 
-Board::Board()
+Board::Board():
+   m_pre_step(nullptr)
 { 
-   m_min_left = m_min_top = m_left = m_top = 16;
-   m_max_right = m_max_buttom = m_right = m_buttom = 0;
+   m_left = m_top = 16;
+   m_right = m_buttom = 0;
    m_pre_round = '-';
    m_step_index = 0;
 
-   for (int i = 0; i < 15; i++) 
-   {
-      for (int j = 0; j < 15; j++) 
-      {
+   for (int i = 0; i < 15; i++)  {
+      for (int j = 0; j < 15; j++) {
          m_bb[i][j] = '-';
          int grid_index_key = INDEX_KEY(i,j);
-         m_grid_status[grid_index_key] = true;
+         m_grid_available[grid_index_key] = true;
       }
    }
 
+#ifdef DYM_EVAL
    //initialize previous score as zero
-   for (int i = 0; i < 15; i++) 
-   {
+   for (int i = 0; i < 15; i++) {
       m_pre_horizontal_score[i] = m_pre_vertical_score[i] = 0;
    }
 
-   for (int i = 0; i < 21; i++) 
-   {
+   for (int i = 0; i < 21; i++) {
       m_pre_diagonal_slash[i] = m_pre_diagonal_backslash[i] = 0;
    }
+#endif
 }
 
-Board::Board(const Board& other)
+void Board::copy_from_other(const Board& other)
 {
-   if (this != &other)
-   {
-      for (int i = 0; i < 15; i++) 
-      {
-         for (int j = 0; j < 15; j++) 
-         {
+   if (this != &other) {
+      for (int i = 0; i < 15; i++) {
+         for (int j = 0; j < 15; j++) {
             m_bb[i][j] = other.m_bb[i][j];
          }
       }
 
-      m_grid_status.clear();
-      map<int,bool>::const_iterator it = other.m_grid_status.begin();
-      for (;it != other.m_grid_status.end(); it++) 
-         m_grid_status[it->first] = it->second;
+      m_grid_available.clear();
+      map<int,bool>::const_iterator it = other.m_grid_available.begin();
+      for (;it != other.m_grid_available.end(); it++) 
+         m_grid_available[it->first] = it->second;
 
-      m_max_right = other.m_max_right;
-      m_max_buttom = other.m_max_buttom;
-      m_min_left = other.m_min_left;
-      m_min_top = other.m_min_top;
       m_left = other.m_left;
       m_right = other.m_right;
       m_top = other.m_top;
@@ -264,30 +270,47 @@ Board::Board(const Board& other)
       m_step_index = other.m_step_index;
       m_pre_step = new Step(other.m_pre_step->i, other.m_pre_step->j);
 
-      for (int i = 0; i < 15; i++) 
-      {
+#ifdef DYM_EVAL
+      for (int i = 0; i < 15; i++) {
          m_pre_horizontal_score[i] = other.m_pre_horizontal_score[i];
          m_pre_vertical_score[i] = other.m_pre_vertical_score[i];
       }
 
-      for (int i = 0; i < 21; i++) 
-      {
+      for (int i = 0; i < 21; i++) {
          m_pre_diagonal_slash[i] = other.m_pre_diagonal_slash[i];
          m_pre_diagonal_backslash[i] = other.m_pre_diagonal_backslash[i];
       }
+#endif
+
+      m_step_list.clear();
+      set<int>::const_iterator it2 = other.m_step_list.begin();
+      for (;it2 != other.m_step_list.end(); it2++)
+         m_step_list.insert(*it2);
    } 
+}
+
+Board::Board(const Board& other)
+{
+   copy_from_other(other);
+}
+
+Board& Board::operator= (const Board& other)
+{
+   copy_from_other(other);
+   return *this;
 }
 
 void Board::update_grid_status(int i, int j, char grid)
 {
    m_bb[i][j] = grid;
 
-   Step *s = new Step(i, j);
+   if (!m_pre_step) {
+      m_pre_step = new Step(i, j);
+   }
+   else {
+      m_pre_step->i = i, m_pre_step->j = j;
+   }
 
-   if (m_pre_step) 
-      delete m_pre_step;
-
-   m_pre_step = s;
 
    if (grid != m_pre_round) 
       m_step_index = 1;
@@ -296,11 +319,10 @@ void Board::update_grid_status(int i, int j, char grid)
 
    m_pre_round = grid;
 
-
-   if ('-' != grid) 
-   {
+   if ('-' != grid) {
       int index = INDEX_KEY(i,j);
-      m_grid_status[index] = false;
+      m_grid_available[index] = false;
+      m_step_list.insert(index);
 
       if (m_left > i) 
          m_left = i;
@@ -315,6 +337,7 @@ void Board::update_grid_status(int i, int j, char grid)
          m_buttom = j;
    }
 
+#ifdef DYM_EVAL
    m_pre_horizontal_score[i] = eval_horizontal(i);
    m_pre_vertical_score[j] = eval_vertical(j);
 
@@ -325,33 +348,53 @@ void Board::update_grid_status(int i, int j, char grid)
    int backslash_index = i-j+10;
    if (backslash_index>=0 && backslash_index <=20) 
       m_pre_diagonal_backslash[backslash_index] = eval_diagonal_backslash(i, j);
+#endif
 }
 
-void Board::update_next_step_range()
+void Board::get_next_steps(set<int>& steps, char grid)
 {
-   m_min_left= (m_left-POTENTIAL_GEP)<0 ? 0 : (m_left-POTENTIAL_GEP);
-   m_max_right = (m_right+POTENTIAL_GEP)>15 ? 15 : (m_right+POTENTIAL_GEP);
-   m_min_top = (m_top-POTENTIAL_GEP)<0 ? 0 : (m_top-POTENTIAL_GEP);
-   m_max_buttom = (m_buttom-POTENTIAL_GEP)>15 ? 0 : (m_buttom+POTENTIAL_GEP);
-}
-
-void Board::get_next_steps(vector<Step*>& steps, char grid)
-{
-   update_next_step_range();
-
-   for (int i = m_min_left; i <= m_max_right; i++) 
+   vector<int> tmp_steps;
+   set<int>::const_iterator it = m_step_list.begin();
+   for (; it != m_step_list.end(); it++)
    {
-      for (int j = m_min_top; j <= m_max_buttom; j++) 
-      {
-         int key = INDEX_KEY(i,j);
-         if (m_grid_status[key]) 
-         {
-            bool valid = is_valid_next_step(i, j, grid);
-            if (valid)
-            {
-               Step *s = new Step(i,j);
-               steps.push_back(s);
-            }
+      int step = *it;
+      int i = I_FROM_INDEX(step);
+      int j = J_FROM_INDEX(step);
+      tmp_steps.clear();
+      get_steps_from_center_step(i, j, grid, tmp_steps);
+      vector<int>::const_iterator it2 = tmp_steps.begin();
+      for (; it2 != tmp_steps.end(); it2++) {
+         int potential_step = *it2;
+         if (m_step_list.find(potential_step) == m_step_list.end()) {
+            steps.insert(potential_step);
+         }
+      }
+   }
+}
+
+void Board::get_steps_from_center_step(int i, int j, char grid, vector<int>& steps)
+{
+   int left = i-POTENTIAL_GEP;
+   if (left < 0)
+      left = 0;
+
+   int right = i+POTENTIAL_GEP;
+   if (right >14)
+      right = 14;
+
+   int top = j-POTENTIAL_GEP;
+   if (top < 0)
+      top = 0;
+
+   int buttom = j+POTENTIAL_GEP;
+   if (buttom > 14)
+      buttom = 14;
+
+   for (int x = left; x <= right; x++) {
+      for (int y = top; y <= buttom; y++) {
+         int index = INDEX_KEY(x,y);
+         if (m_grid_available[index] && is_valid_next_step(x, y, grid)) {
+            steps.push_back(index);
          }
       }
    }
@@ -372,6 +415,21 @@ int Board::eval_board()
 {
    int score = 0;
 
+#ifndef DYM_EVAL
+   for (int count = 0; count < 15; count++) {
+      score += eval_horizontal(count);
+      score += eval_vertical(count);
+      score += eval_diagonal_slash(0, count);
+      score += eval_diagonal_backslash(0, count);
+   }
+
+   for (int count = 1; count < 15; count++) {
+      score += eval_diagonal_slash(14, count);
+      score += eval_diagonal_backslash(14, count);
+   }
+#endif
+
+#ifdef DYM_EVAL
    for (int i = 0; i < 15; i++) 
    {
       score += m_pre_horizontal_score[i];
@@ -383,6 +441,7 @@ int Board::eval_board()
       score += m_pre_diagonal_slash[i];
       score += m_pre_diagonal_backslash[i];
    }
+#endif
 
    return score;
 }
@@ -499,80 +558,82 @@ int Board::eval_diagonal_backslash(int i, int j)
 }
 
 int Board::alpha_beta(int depth, int alpha, int beta, bool bOrW) {
-   static int pre_value = _IMPOSSIBLE_;
-   int value;
-   char grid = bOrW ? 'x' : 'o';
+   //static int pre_value = _IMPOSSIBLE_;
+   //int value;
+   //char grid = bOrW ? 'x' : 'o';
 
-   if (depth == 0) {
-      return eval_board();
-   }
+   //if (depth == 0) {
+   //   return eval_board();
+   //}
 
-   vector<Step*> ss1;
-   get_next_steps(ss1, grid);
-   for (size_t ii = 0; ii < ss1.size(); ii++) 
-   {
-      Step *s1 = ss1[ii];
-      update_grid_status(s1->i, s1->j, grid);
-      vector<Step*> ss2;
-      get_next_steps(ss2, grid);
-      for (size_t jj = 0; jj < ss2.size(); jj++) 
-      {
-         Step *s2 = ss2[jj];
-         update_grid_status(s2->i, s2->j, grid);
-         value = -alpha_beta(depth - 1, -beta, -alpha, !bOrW);
-         update_grid_status(s2->i, s2->j, '-');
-         if (pre_value == _IMPOSSIBLE_) 
-         {
-            pre_value = value;
-         }
+   //vector<Step*> ss1;
+   //get_next_steps(ss1, grid);
+   //for (size_t ii = 0; ii < ss1.size(); ii++) 
+   //{
+   //   Step *s1 = ss1[ii];
+   //   update_grid_status(s1->i, s1->j, grid);
+   //   vector<Step*> ss2;
+   //   get_next_steps(ss2, grid);
+   //   for (size_t jj = 0; jj < ss2.size(); jj++) 
+   //   {
+   //      Step *s2 = ss2[jj];
+   //      update_grid_status(s2->i, s2->j, grid);
+   //      value = -alpha_beta(depth - 1, -beta, -alpha, !bOrW);
+   //      update_grid_status(s2->i, s2->j, '-');
+   //      if (pre_value == _IMPOSSIBLE_) 
+   //         pre_value = value;
 
-         if (pre_value < value) 
-         {
-            value = pre_value;
-         }
-      }
-      update_grid_status(s1->i, s1->j, '-');
-      if (value >= beta) {
-         return beta;
-      }
-      if (value > alpha) {
-         alpha = value;
-      }
-   }
+   //      if (pre_value < value) 
+   //         value = pre_value;
+   //   }
+   //   update_grid_status(s1->i, s1->j, '-');
+   //   if (value >= beta) 
+   //      return beta;
+
+   //   if (value > alpha) 
+   //      alpha = value;
+   //}
    return alpha;
 }
 
 void Board::pre_compute_steps(char grid, vector<StepScore*>& ss_vector)
 {
-   vector<Step*> first_steps;
+   set<int> first_steps;
    get_next_steps(first_steps, grid);
 
    vector<StepScore*> tmp_ss_vector(first_steps.size()*first_steps.size());
-   for (size_t i = 0; i < first_steps.size(); i++) 
+   set<int>::const_iterator fs_it = first_steps.begin();
+   for (; fs_it != first_steps.end(); fs_it++) 
    {
-      Step *s = first_steps[i];
+      int fs_index = *fs_it;
+      int fs_i = I_FROM_INDEX(fs_index);
+      int fs_j = J_FROM_INDEX(fs_index);
       //backup board
       g_backup_board.push(*this);
       
-      update_grid_status(s->i, s->j, grid);
-      int score = eval_board();
+      update_grid_status(fs_i, fs_j, grid);
+      //int score = eval_board();
 
-      vector<Step*> second_steps;
+      set<int> second_steps;
       get_next_steps(second_steps, grid);
-      for (size_t j = 0; j < second_steps.size(); j++) 
+      set<int>::const_iterator ss_it = second_steps.begin();
+      for (; ss_it != second_steps.end(); ss_it++) 
       {
-         Step *s2 = second_steps[j];
+         int ss_index = *ss_it;
+         int ss_i = I_FROM_INDEX(ss_index);
+         int ss_j = J_FROM_INDEX(ss_index);
+         
          g_backup_board.push(*this);
 
-         update_grid_status(s2->i, s2->j, grid);
-         int total_score = score + eval_board();
+         update_grid_status(ss_i, ss_j, grid);
+         //int total_score = score + eval_board();
          
          //rollback board
          *this = g_backup_board.top();
          g_backup_board.pop();
          
-         StepScore *ss = new StepScore(*s, *s2, total_score);
-         tmp_ss_vector.push_back(ss);
+         //StepScore *ss = new StepScore(fs_i, fs_j, ss_i, ss_j, total_score);
+         //tmp_ss_vector.push_back(ss);
       }
       //rollback board
       *this = g_backup_board.top();
@@ -580,6 +641,7 @@ void Board::pre_compute_steps(char grid, vector<StepScore*>& ss_vector)
    }
 
    //sort the temp ss vector and only get the first 50 largest scored steps.
+
 }
 
 void Board::print_board()
@@ -594,24 +656,16 @@ void Board::print_board()
    for (int i = 0; i < 15; i++) 
    {
       if (i < 10) 
-      {
          cout<<i<<"  ";
-      }
       else
-      {
          cout<<i<<" ";
-      }
 
       for (int j = 0; j < 15; j++) 
       {
          if (j < 10) 
-         {
             cout<<m_bb[i][j]<<"  ";
-         }
          else
-         {
             cout<<m_bb[i][j]<<"   ";
-         }
       }
       cout<<endl;
    }
@@ -622,35 +676,30 @@ void test_kmp_matcher();
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+   clock_t begin = clock();
+
    compute_failure_function();
    Board b1;
    vector<Step*> steps;
    b1.update_grid_status(8,8,'x');
-   g_backup_board.push(b1);
    b1.update_grid_status(6,8,'x');
-   g_backup_board.push(b1);
    b1.update_grid_status(1,1,'o');
-   g_backup_board.push(b1);
    b1.update_grid_status(3,1,'o');
-   g_backup_board.push(b1);
    b1.update_grid_status(8,9,'x');
-   g_backup_board.push(b1);
    b1.update_grid_status(6,7,'x');
-   g_backup_board.push(b1);
    b1.update_grid_status(2,1,'o');
-   g_backup_board.push(b1);
    b1.update_grid_status(2,3,'o');
-   g_backup_board.push(b1);
+   b1.print_board();
 
    vector<StepScore*> ss;
    b1.pre_compute_steps('x', ss);
-
-   b1.print_board();
 
    int score = b1.eval_board();
    //testing
    //test_kmp_matcher();
 
+   clock_t end = clock();
+   cout << end-begin << endl;
    return 0;
 }
 
