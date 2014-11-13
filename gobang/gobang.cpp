@@ -2,10 +2,11 @@
 //
 
 #include "stdafx.h"
+#include <iostream>
 #include <map>
+#include <stack>
 #include <string>
 #include <vector>
-#include <iostream>
 
 using namespace std;
 
@@ -18,13 +19,80 @@ using namespace std;
 
 struct Step
 {
-   Step(int ii, int jj, int gg):i(ii), j(jj), grid(gg) {}
+   Step(int ii, int jj):i(ii), j(jj) {}
+   Step(const Step& step):i(step.i), j(step.j) {}
    int i;
    int j;
-   char grid;
 };
 
+struct StepScore
+{
+   Step step1;
+   Step step2;
+   int score;
+
+   StepScore(const Step& s1, const Step& s2, int s):
+      step1(s1), step2(s2), score(s){}
+};
+
+class Board
+{
+private:
+   char m_bb[15][15];
+   // available for certain grid?
+   map<int, bool> m_grid_status;
+
+   int m_max_right;
+   int m_min_left;
+   int m_min_top;
+   int m_max_buttom;
+
+   int m_left;
+   int m_right;
+   int m_top;
+   int m_buttom;
+
+   // current round, black 'x',  white 'o'.
+   char m_pre_round;
+
+   //each side can play 2 steps, this index is to show currently in which step. 1 or 2
+   int m_step_index;
+   Step *m_pre_step;
+
+   //cache previous step score.
+   int m_pre_horizontal_score[15];
+   int m_pre_vertical_score[15];
+   int m_pre_diagonal_slash[21];
+   int m_pre_diagonal_backslash[21];
+public:
+   Board();
+   Board(const Board& other);
+   ~Board();
+   // '-' empty, 'o' white, 'x' black
+   void update_grid_status(int i, int j, char grid);
+   void get_next_steps(vector<Step*>& steps, char grid);
+
+   // positive score for black and negative score for white.
+   int eval_board();
+   int eval_horizontal(int row);
+   int eval_vertical(int col);
+   int eval_diagonal_slash(int i, int j);
+   int eval_diagonal_backslash(int i, int j);
+
+   bool is_valid_next_step(int i, int j, char grid);
+   int alpha_beta(int depth, int alpha, int beta, bool bOrW);
+
+   void pre_compute_steps(char grid, vector<StepScore*>& ssVector);
+
+   void print_board();
+private:
+   void update_next_step_range();
+};
+
+//////////////global variables/////////////////////////
 char g_pattern_buffer[16];
+stack<Board> g_backup_board;
+///////////////////////////////////////////////////////
 
 //x: black, o:white
 static char* s_black_patterns[] = {
@@ -124,60 +192,16 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
    return pattern_matched;
 }
 
-class Board
-{
-private:
-   char m_bb[15][15];
-   // available for certain grid?
-   map<int, bool> m_grid_status;
 
-   int m_max_right;
-   int m_min_left;
-   int m_min_top;
-   int m_max_buttom;
-
-   int m_left;
-   int m_right;
-   int m_top;
-   int m_buttom;
-
-   // current round, black 'x',  white 'o'.
-   char m_pre_round;
-
-   //each side can play 2 steps, this index is to show currently in which step. 1 or 2
-   int m_step_index;
-   Step *m_pre_step;
-
-   //cache previous step score.
-   int m_pre_horizontal_score[15];
-   int m_pre_vertical_score[15];
-   int m_pre_diagonal_slash[21];
-   int m_pre_diagonal_backslash[21];
-public:
-   Board();
-   ~Board();
-   // '-' empty, 'o' white, 'x' black
-   void update_grid_status(int i, int j, char grid);
-   void get_next_steps(vector<Step*>& steps, char grid);
-
-   // positive score for black and negative score for white.
-   int eval_board();
-   int eval_horizontal(int row);
-   int eval_vertical(int col);
-   int eval_diagonal_slash(int i, int j);
-   int eval_diagonal_backslash(int i, int j);
-
-   bool is_valid_next_step(int i, int j, char grid);
-   int alpha_beta(int depth, int alpha, int beta, bool bOrW);
-
-   void print_board();
-private:
-   void update_next_step_range();
-};
 
 Board::~Board()
 {
    m_grid_status.clear();
+   if (m_pre_step) 
+   {
+      delete m_pre_step;
+      m_pre_step = nullptr;
+   }
 }
 
 Board::Board()
@@ -209,11 +233,56 @@ Board::Board()
    }
 }
 
+Board::Board(const Board& other)
+{
+   if (this != &other)
+   {
+      for (int i = 0; i < 15; i++) 
+      {
+         for (int j = 0; j < 15; j++) 
+         {
+            m_bb[i][j] = other.m_bb[i][j];
+         }
+      }
+
+      m_grid_status.clear();
+      map<int,bool>::const_iterator it = other.m_grid_status.begin();
+      for (;it != other.m_grid_status.end(); it++) 
+         m_grid_status[it->first] = it->second;
+
+      m_max_right = other.m_max_right;
+      m_max_buttom = other.m_max_buttom;
+      m_min_left = other.m_min_left;
+      m_min_top = other.m_min_top;
+      m_left = other.m_left;
+      m_right = other.m_right;
+      m_top = other.m_top;
+      m_buttom = other.m_buttom;
+      
+      m_pre_round = other.m_pre_round;
+
+      m_step_index = other.m_step_index;
+      m_pre_step = new Step(other.m_pre_step->i, other.m_pre_step->j);
+
+      for (int i = 0; i < 15; i++) 
+      {
+         m_pre_horizontal_score[i] = other.m_pre_horizontal_score[i];
+         m_pre_vertical_score[i] = other.m_pre_vertical_score[i];
+      }
+
+      for (int i = 0; i < 21; i++) 
+      {
+         m_pre_diagonal_slash[i] = other.m_pre_diagonal_slash[i];
+         m_pre_diagonal_backslash[i] = other.m_pre_diagonal_backslash[i];
+      }
+   } 
+}
+
 void Board::update_grid_status(int i, int j, char grid)
 {
    m_bb[i][j] = grid;
 
-   Step *s = new Step(i,j,grid);
+   Step *s = new Step(i, j);
 
    if (m_pre_step) 
       delete m_pre_step;
@@ -249,8 +318,6 @@ void Board::update_grid_status(int i, int j, char grid)
    m_pre_horizontal_score[i] = eval_horizontal(i);
    m_pre_vertical_score[j] = eval_vertical(j);
 
-   //if (i+j>3 || i+j<25) 
-   //   m_pre_diagonal_slash[i+j-4] = eval_diagonal_slash(i, j);
    int slash_index = i+j-4;
    if (slash_index>=0 && slash_index <=20) 
       m_pre_diagonal_slash[i+j-4] = eval_diagonal_slash(i, j);
@@ -282,7 +349,7 @@ void Board::get_next_steps(vector<Step*>& steps, char grid)
             bool valid = is_valid_next_step(i, j, grid);
             if (valid)
             {
-               Step *s = new Step(i,j,grid);
+               Step *s = new Step(i,j);
                steps.push_back(s);
             }
          }
@@ -353,7 +420,7 @@ int Board::eval_vertical(int col)
       score -= s_positive_score[i]*white_turn_matched;
    }
 
-   return 0;
+   return score;
 }
 
 int Board::eval_diagonal_slash(int i, int j)
@@ -475,6 +542,46 @@ int Board::alpha_beta(int depth, int alpha, int beta, bool bOrW) {
    return alpha;
 }
 
+void Board::pre_compute_steps(char grid, vector<StepScore*>& ss_vector)
+{
+   vector<Step*> first_steps;
+   get_next_steps(first_steps, grid);
+
+   vector<StepScore*> tmp_ss_vector(first_steps.size()*first_steps.size());
+   for (size_t i = 0; i < first_steps.size(); i++) 
+   {
+      Step *s = first_steps[i];
+      //backup board
+      g_backup_board.push(*this);
+      
+      update_grid_status(s->i, s->j, grid);
+      int score = eval_board();
+
+      vector<Step*> second_steps;
+      get_next_steps(second_steps, grid);
+      for (size_t j = 0; j < second_steps.size(); j++) 
+      {
+         Step *s2 = second_steps[j];
+         g_backup_board.push(*this);
+
+         update_grid_status(s2->i, s2->j, grid);
+         int total_score = score + eval_board();
+         
+         //rollback board
+         *this = g_backup_board.top();
+         g_backup_board.pop();
+         
+         StepScore *ss = new StepScore(*s, *s2, total_score);
+         tmp_ss_vector.push_back(ss);
+      }
+      //rollback board
+      *this = g_backup_board.top();
+      g_backup_board.pop();
+   }
+
+   //sort the temp ss vector and only get the first 50 largest scored steps.
+}
+
 void Board::print_board()
 {
    cout<<"   ";
@@ -519,13 +626,25 @@ int _tmain(int argc, _TCHAR* argv[])
    Board b1;
    vector<Step*> steps;
    b1.update_grid_status(8,8,'x');
+   g_backup_board.push(b1);
    b1.update_grid_status(6,8,'x');
+   g_backup_board.push(b1);
    b1.update_grid_status(1,1,'o');
+   g_backup_board.push(b1);
    b1.update_grid_status(3,1,'o');
+   g_backup_board.push(b1);
    b1.update_grid_status(8,9,'x');
+   g_backup_board.push(b1);
    b1.update_grid_status(6,7,'x');
+   g_backup_board.push(b1);
    b1.update_grid_status(2,1,'o');
+   g_backup_board.push(b1);
    b1.update_grid_status(2,3,'o');
+   g_backup_board.push(b1);
+
+   vector<StepScore*> ss;
+   b1.pre_compute_steps('x', ss);
+
    b1.print_board();
 
    int score = b1.eval_board();
