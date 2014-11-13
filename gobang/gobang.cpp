@@ -16,15 +16,15 @@ using namespace std;
 #define _IMPOSSIBLE_ 2147483647
 #define PATTERN_NUM 33
 
-class Step
+struct Step
 {
-public:
-   Step(int ii, int jj):i(ii), j(jj) {}
+   Step(int ii, int jj, int gg):i(ii), j(jj), grid(gg) {}
    int i;
    int j;
+   char grid;
 };
 
-char g_pattern_buffer[15];
+char g_pattern_buffer[16];
 
 //x: black, o:white
 static char* s_black_patterns[] = {
@@ -164,8 +164,8 @@ public:
    int eval_board();
    int eval_horizontal(int row);
    int eval_vertical(int col);
-   int eval_diagonal_slash(int index, bool up);
-   int eval_diagonal_backslash(int index, bool up);
+   int eval_diagonal_slash(int i, int j);
+   int eval_diagonal_backslash(int i, int j);
 
    bool is_valid_next_step(int i, int j, char grid);
    int alpha_beta(int depth, int alpha, int beta, bool bOrW);
@@ -213,22 +213,18 @@ void Board::update_grid_status(int i, int j, char grid)
 {
    m_bb[i][j] = grid;
 
-   Step *s = new Step(i,j);
+   Step *s = new Step(i,j,grid);
 
    if (m_pre_step) 
-   {
       delete m_pre_step;
-   }
+
    m_pre_step = s;
 
    if (grid != m_pre_round) 
-   {
       m_step_index = 1;
-   }
    else
-   {
       m_step_index++;
-   }
+
    m_pre_round = grid;
 
 
@@ -238,25 +234,30 @@ void Board::update_grid_status(int i, int j, char grid)
       m_grid_status[index] = false;
 
       if (m_left > i) 
-      {
          m_left = i;
-      }
 
       if (m_right < i) 
-      {
          m_right = i;
-      }
 
       if (m_top > j) 
-      {
          m_top = j;
-      }
 
       if (m_buttom < j) 
-      {
          m_buttom = j;
-      }
    }
+
+   m_pre_horizontal_score[i] = eval_horizontal(i);
+   m_pre_vertical_score[j] = eval_vertical(j);
+
+   //if (i+j>3 || i+j<25) 
+   //   m_pre_diagonal_slash[i+j-4] = eval_diagonal_slash(i, j);
+   int slash_index = i+j-4;
+   if (slash_index>=0 && slash_index <=20) 
+      m_pre_diagonal_slash[i+j-4] = eval_diagonal_slash(i, j);
+
+   int backslash_index = i-j+10;
+   if (backslash_index>=0 && backslash_index <=20) 
+      m_pre_diagonal_backslash[backslash_index] = eval_diagonal_backslash(i, j);
 }
 
 void Board::update_next_step_range()
@@ -281,7 +282,7 @@ void Board::get_next_steps(vector<Step*>& steps, char grid)
             bool valid = is_valid_next_step(i, j, grid);
             if (valid)
             {
-               Step *s = new Step(i,j);
+               Step *s = new Step(i,j,grid);
                steps.push_back(s);
             }
          }
@@ -304,11 +305,17 @@ int Board::eval_board()
 {
    int score = 0;
 
-   for (int row = m_top; row <= m_buttom; row++)
-      score += eval_horizontal(row);
+   for (int i = 0; i < 15; i++) 
+   {
+      score += m_pre_horizontal_score[i];
+      score += m_pre_vertical_score[i];
+   }
 
-   for (int col = m_left; col <= m_right; col++)
-      score += eval_vertical(col);
+   for (int i = 0; i < 21; i++) 
+   {
+      score += m_pre_diagonal_slash[i];
+      score += m_pre_diagonal_backslash[i];
+   }
 
    return score;
 }
@@ -349,14 +356,79 @@ int Board::eval_vertical(int col)
    return 0;
 }
 
-int Board::eval_diagonal_slash(int index, bool up)
+int Board::eval_diagonal_slash(int i, int j)
 {
-   return 0;
+   int score = 0;
+   
+   if ((i<4 && j<4) || (i>10) && (j>10)) 
+      return score;
+
+   int len = 0;
+   if (i+j < 15) 
+   {
+      len = i+j+1;
+      int row = 0, col = i+j;
+      for (; row < len; row++, col--)
+         g_pattern_buffer[row] = m_bb[row][col];
+
+      g_pattern_buffer[len] = 0;
+   }
+   else
+   {
+      int row = i+j-14, col = 14, count = 0;
+      len = col-row+1;
+      for (; count < len; row++, count++, col--) 
+         g_pattern_buffer[count] = m_bb[row][col];
+
+      g_pattern_buffer[len] = 0;
+   }
+
+   for (int i = 0; i < PATTERN_NUM; i++)
+   {
+      int black_turn_matched = kmp_matcher(g_pattern_buffer, len, s_black_patterns[i], i, s_pattern_len[i]);
+      score += s_positive_score[i]*black_turn_matched;
+      int white_turn_matched = kmp_matcher(g_pattern_buffer, len, s_white_patterns[i], i, s_pattern_len[i]);
+      score -= s_positive_score[i]*white_turn_matched;
+   }
+   return score;
 }
 
-int Board::eval_diagonal_backslash(int index, bool up)
+int Board::eval_diagonal_backslash(int i, int j)
 {
-   return 0;
+   int score = 0;
+
+   if ((i<4 && j >10) || (i>10 && j<4)) 
+      return score;
+
+   int len = 0;
+   if (i<j) 
+   {
+      len = i-j+15;
+      int row = 0, col = j-i;
+      for (; row < len; row++, col++) 
+         g_pattern_buffer[row] = m_bb[row][col];
+
+      g_pattern_buffer[len] = 0;
+   }
+   else
+   {
+      len = j-i+15;
+      int row = i-j, col = 0;
+      for ( ;row < 15; row++, col++) 
+         g_pattern_buffer[col] = m_bb[row][col];
+
+      g_pattern_buffer[len] = 0;
+   }
+
+   for (int i = 0; i < PATTERN_NUM; i++)
+   {
+      int black_turn_matched = kmp_matcher(g_pattern_buffer, len, s_black_patterns[i], i, s_pattern_len[i]);
+      score += s_positive_score[i]*black_turn_matched;
+      int white_turn_matched = kmp_matcher(g_pattern_buffer, len, s_white_patterns[i], i, s_pattern_len[i]);
+      score -= s_positive_score[i]*white_turn_matched;
+   }
+
+   return score;
 }
 
 int Board::alpha_beta(int depth, int alpha, int beta, bool bOrW) {
