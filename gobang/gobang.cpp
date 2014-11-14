@@ -716,7 +716,7 @@ void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
 bool Board::is_sibling(int i, int j, int ii, int jj)
 {
    // if two steps are same, return true;
-   if (i == ii && j == j) {
+   if (i == ii && j == jj) {
       return true;
    }
 
@@ -822,15 +822,18 @@ int _tmain(int argc, _TCHAR* argv[])
             int i = atoi(&buf[0]);
             int j = atoi(&buf[2]);
             while(b1.is_sibling(s1.i, s1.j, i, j) || !b1.is_avaliable_grid(i, j)) {
+               cout << "invalid input!" <<endl;
                memset(buf, 0, 4);
                cin >> buf;
+               i = atoi(&buf[0]);
+               j = atoi(&buf[2]);
             }
-            s2.i = atoi(&buf[0]);
-            s2.j = atoi(&buf[2]);
+            s2.i = i;
+            s2.j = j;
          }
       }
       b1.update_grid_status(s1.i, s1.j, 'x');
-      b1.update_grid_status(s1.i, s1.j, 'x');
+      b1.update_grid_status(s2.i, s2.j, 'x');
       if (b1.is_game_over()) {
          break;
       }
