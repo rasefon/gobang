@@ -15,7 +15,7 @@ using namespace std;
 //#define DYM_EVAL
 
 #define POTENTIAL_GEP 1
-#define DEPTH 2
+#define DEPTH 3
 
 #define INDEX_KEY(i,j) (i*100+j)
 #define I_FROM_INDEX(index) (index/100)
@@ -25,7 +25,7 @@ using namespace std;
 #define _IMPOSSIBLE_ 2147483647
 #define WIN_SCORE 500000
 
-#define PATTERN_NUM 33
+#define PATTERN_NUM 35
 
 struct Step
 {
@@ -135,17 +135,17 @@ stack<Board> g_backup_board;
 static char* s_black_patterns[] = {
    "xxxxx", //0
    "-xxxx-", //1
-   "oxxxx-", "-xxxxo", "x-xxx", "xx-xx", "xxx-x", //2~6
-   "--xxx-", "-xxx--", "-xx-x-", "-x-xx-", //7~10
+   "oxxxx-", "-xxxxo", "x-xxx", "xx-xx", "xxx-x", "xxxx-", "-xxxx",
+   "--xxx-", "-xxx--", "-xx-x-", "-x-xx-", 
    "oxxx--", "oxx-x-", "ox-xx-", "--xxxo", "-x-xxo", "-xx-xo", "xx--x", "x--xx", "x-x-x", "o-xxx-", "-xxx-o", //11~21
-   "--xx--", "--x-x-", "-x-x--", "-x--x-",//22~25
-   "oxx---", "ox-x--", "ox--x-", "---xxo", "--x-xo", "-x--xo", "x---x"//26~32
+   "--xx--", "--x-x-", "-x-x--", "-x--x-",
+   "oxx---", "ox-x--", "ox--x-", "---xxo", "--x-xo", "-x--xo", "x---x"
 };
 
 static char* s_white_patterns[] = {
    "ooooo",
    "-oooo-", 
-   "xoooo-", "-oooox", "o-ooo", "oo-oo", "ooo-o",
+   "xoooo-", "-oooox", "o-ooo", "oo-oo", "ooo-o", "oooo-", "-oooo"
    "--ooo-", "-ooo--", "-oo-o-", "-o-oo-",
    "xooo--", "xoo-o-", "xo-oo-", "--ooox", "-o-oox", "-oo-ox", "oo--o", "o--oo", "o-o-o", "x-ooo-", "-ooo-x",
    "--oo--", "--o-o-", "-o-o--", "-o--o-",
@@ -155,7 +155,7 @@ static char* s_white_patterns[] = {
 static int s_positive_score[] = {
    WIN_SCORE,
    10000,
-   5000, 5000, 5000, 5000, 5000,
+   5000, 5000, 5000, 5000, 5000, 5000, 5000,
    1000, 1000, 1000, 1000,
    500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
    50, 50, 50, 50,
@@ -838,12 +838,22 @@ int _tmain(int argc, _TCHAR* argv[])
          break;
       }
       b1.print_board();
+      int score = b1.eval_board(true);
+      cout << "black score: " << score << endl;
+      score = b1.eval_board(false);
+      cout << "white score: " << score << endl;
+      cout << endl;
 
       b1.alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, false);
       TwoSteps& ts = b1.best_steps();
       b1.update_grid_status(ts.step1.i, ts.step1.j, 'o');
       b1.update_grid_status(ts.step2.i, ts.step2.j, 'o');
       b1.print_board();
+      score = b1.eval_board(true);
+      cout << "black score: " << score << endl;
+      score = b1.eval_board(false);
+      cout << "white score: " << score << endl;
+      cout << endl;
    }
 
    if (b1.m_black_win) {
