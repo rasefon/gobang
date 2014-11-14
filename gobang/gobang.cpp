@@ -14,8 +14,8 @@ using namespace std;
 
 //#define DYM_EVAL
 
-#define POTENTIAL_GEP 2
-#define DEPTH = 5
+#define POTENTIAL_GEP 1
+#define DEPTH 2
 
 #define INDEX_KEY(i,j) (i*100+j)
 #define I_FROM_INDEX(index) (index/100)
@@ -23,6 +23,7 @@ using namespace std;
 
 #define _INFINITE_ 2147483646
 #define _IMPOSSIBLE_ 2147483647
+#define WIN_SCORE 500000
 
 #define PATTERN_NUM 33
 
@@ -35,22 +36,19 @@ struct Step
    int j;
 };
 
-struct StepScore
+struct TwoSteps
 {
    Step step1;
    Step step2;
-   int score;
 
-   StepScore(const Step& s1, const Step& s2, int s):
-      step1(s1), step2(s2), score(s){}
+   TwoSteps(){}
 
-   StepScore(int s1_i, int s1_j, int s2_i, int s2_j, int s)
+   TwoSteps(int s1_i, int s1_j, int s2_i, int s2_j)
    {
       step1.i = s1_i;
       step1.j = s1_j;
       step2.i = s2_i;
       step2.j = s2_j;
-      score = s;
    }
 };
 
@@ -71,7 +69,12 @@ private:
 
    //each side can play 2 steps, this index is to show currently in which step. 1 or 2
    int m_step_index;
-   Step *m_pre_step;
+   Step m_pre_step;
+
+   TwoSteps m_next_best_steps;
+
+public:
+   bool m_black_win, m_white_win;
 
 #ifdef DYM_EVAL
    //cache previous step score.
@@ -93,20 +96,33 @@ public:
    void get_next_steps(set<int>& steps, char grid);
 
    // positive score for black and negative score for white.
-   int eval_board();
-   int eval_horizontal(int row);
-   int eval_vertical(int col);
-   int eval_diagonal_slash(int i, int j);
-   int eval_diagonal_backslash(int i, int j);
+   int eval_board(bool is_black_turn);
+   int eval_horizontal(int row, bool is_black_turn);
+   int eval_vertical(int col, bool is_black_turn);
+   int eval_diagonal_slash(int i, int j, bool is_black_turn);
+   int eval_diagonal_backslash(int i, int j, bool is_black_turn);
+   void compute_horizonal_target(int row);
+   void compute_vertical_target(int col);
+   int compute_diagonal_slash_target(int i, int j);
+   int compute_diagonal_backslash_target(int i, int j);
+   bool is_game_over();
+   bool game_over_calculator_helper(int len);
 
+   bool is_avaliable_grid(int i, int j);
    bool is_valid_next_step(int i, int j, char grid);
+   bool is_sibling(int i, int j, int ii, int jj);
    int alpha_beta(int depth, int alpha, int beta, bool bOrW);
 
-   void pre_compute_steps(char grid, vector<StepScore*>& ssVector);
+   void pre_compute_steps(char grid, vector<TwoSteps*>& ssVector);
 
    void print_board();
+
+   void self_gamming();
+
+   TwoSteps& best_steps() { return m_next_best_steps; }
 private:
    void get_steps_from_center_step(int i, int j, char grid, vector<int>& steps);
+   int eval_partial_board(int target_len, bool is_black_turn);
    void copy_from_other(const Board& other);
 };
 
@@ -137,13 +153,13 @@ static char* s_white_patterns[] = {
 };
 
 static int s_positive_score[] = {
-   100000,
-   50000,
-   10000, 10000, 10000, 10000, 10000,
-   5000, 5000, 5000, 5000,
-   1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000,
-   500, 500, 500, 500,
-   100, 100, 100, 100, 100, 100, 100
+   WIN_SCORE,
+   10000,
+   5000, 5000, 5000, 5000, 5000,
+   1000, 1000, 1000, 1000,
+   500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+   50, 50, 50, 50,
+   10, 10, 10, 10, 10, 10, 10
 };
 
 // kmp string compare.
@@ -207,19 +223,22 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
    return pattern_matched;
 }
 
+//static int ranged_rand(int range_min, int range_max)
+//{
+//   // Generate random numbers in the half-closed interval
+//   // [range_min, range_max). In other words,
+//   // range_min <= random number < range_max
+//   int u = (double)rand() / (RAND_MAX + 1) * (range_max - range_min) + range_min;
+//   return u;
+//}
 
 
 Board::~Board()
 {
    m_grid_available.clear();
-   if (m_pre_step) {
-      delete m_pre_step;
-      m_pre_step = nullptr;
-   }
 }
 
-Board::Board():
-   m_pre_step(nullptr)
+Board::Board(): m_black_win(false), m_white_win(false)
 { 
    m_left = m_top = 16;
    m_right = m_buttom = 0;
@@ -268,7 +287,10 @@ void Board::copy_from_other(const Board& other)
       m_pre_round = other.m_pre_round;
 
       m_step_index = other.m_step_index;
-      m_pre_step = new Step(other.m_pre_step->i, other.m_pre_step->j);
+      m_pre_step = other.m_pre_step;
+
+      m_black_win = other.m_black_win;
+      m_white_win = other.m_white_win;
 
 #ifdef DYM_EVAL
       for (int i = 0; i < 15; i++) {
@@ -304,13 +326,7 @@ void Board::update_grid_status(int i, int j, char grid)
 {
    m_bb[i][j] = grid;
 
-   if (!m_pre_step) {
-      m_pre_step = new Step(i, j);
-   }
-   else {
-      m_pre_step->i = i, m_pre_step->j = j;
-   }
-
+   m_pre_step.i = i, m_pre_step.j = j;
 
    if (grid != m_pre_round) 
       m_step_index = 1;
@@ -404,28 +420,28 @@ bool Board::is_valid_next_step(int i, int j, char grid)
 {
    if (grid == m_pre_round && m_step_index == 1) 
    {
-      if (i >= m_pre_step->i-1 && i <= m_pre_step->i+1 && j >= m_pre_step->j-1 && j <= m_pre_step->j+1)
+      if (i >= m_pre_step.i-1 && i <= m_pre_step.i+1 && j >= m_pre_step.j-1 && j <= m_pre_step.j+1)
          return false;
    }
 
    return true;
 }
 
-int Board::eval_board()
+int Board::eval_board(bool is_black_turn)
 {
    int score = 0;
 
 #ifndef DYM_EVAL
    for (int count = 0; count < 15; count++) {
-      score += eval_horizontal(count);
-      score += eval_vertical(count);
-      score += eval_diagonal_slash(0, count);
-      score += eval_diagonal_backslash(0, count);
+      score += eval_horizontal(count, is_black_turn);
+      score += eval_vertical(count, is_black_turn);
+      score += eval_diagonal_slash(0, count, is_black_turn);
+      score += eval_diagonal_backslash(0, count, is_black_turn);
    }
 
    for (int count = 1; count < 15; count++) {
-      score += eval_diagonal_slash(14, count);
-      score += eval_diagonal_backslash(14, count);
+      score += eval_diagonal_slash(14, count, is_black_turn);
+      score += eval_diagonal_backslash(14, count, is_black_turn);
    }
 #endif
 
@@ -446,52 +462,83 @@ int Board::eval_board()
    return score;
 }
 
-int Board::eval_horizontal(int row)
+int Board::eval_partial_board(int target_len, bool is_black_turn)
 {
    int score = 0;
-   
+
+   for (int i = 0; i < PATTERN_NUM; i++)
+   {
+      int black_turn_matched = kmp_matcher(g_pattern_buffer, target_len, s_black_patterns[i], i, s_pattern_len[i]);
+      int tmp_score = s_positive_score[i]*black_turn_matched;
+      if (is_black_turn) {
+         score += tmp_score;
+      }
+      else {
+         score -= tmp_score;
+      }
+
+      int white_turn_matched = kmp_matcher(g_pattern_buffer, target_len, s_white_patterns[i], i, s_pattern_len[i]);
+      tmp_score = s_positive_score[i]*white_turn_matched;
+      if (is_black_turn) {
+         score -= tmp_score;
+      }
+      else {
+         score += tmp_score;
+      }
+   }
+
+   return score;
+}
+
+int Board::eval_horizontal(int row, bool is_black_turn)
+{
+   int score = 0;
+  
+   compute_horizonal_target(row);
+   score = eval_partial_board(15, is_black_turn);
+
+   return score;
+}
+
+void Board::compute_horizonal_target(int row)
+{
    for (int i = 0; i < 15; i++)
       g_pattern_buffer[i] = m_bb[row][i];
-   
-   for (int i = 0; i < PATTERN_NUM; i++)
-   {
-      int black_turn_matched = kmp_matcher(g_pattern_buffer, 15, s_black_patterns[i], i, s_pattern_len[i]);
-      score += s_positive_score[i]*black_turn_matched;
-      int white_turn_matched = kmp_matcher(g_pattern_buffer, 15, s_white_patterns[i], i, s_pattern_len[i]);
-      score -= s_positive_score[i]*white_turn_matched;
-   }
-
-   return score;
 }
 
-int Board::eval_vertical(int col)
+int Board::eval_vertical(int col, bool is_black_turn)
 {
    int score = 0;
 
-   for (int i = 0; i < 15; i++)
-      g_pattern_buffer[i] = m_bb[i][col];
-
-   for (int i = 0; i < PATTERN_NUM; i++)
-   {
-      int black_turn_matched = kmp_matcher(g_pattern_buffer, 15, s_black_patterns[i], i, s_pattern_len[i]);
-      score += s_positive_score[i]*black_turn_matched;
-      int white_turn_matched = kmp_matcher(g_pattern_buffer, 15, s_white_patterns[i], i, s_pattern_len[i]);
-      score -= s_positive_score[i]*white_turn_matched;
-   }
+   compute_vertical_target(col);
+   score = eval_partial_board(15, is_black_turn);
 
    return score;
 }
 
-int Board::eval_diagonal_slash(int i, int j)
+void Board::compute_vertical_target(int col)
+{
+   for (int i = 0; i < 15; i++)
+      g_pattern_buffer[i] = m_bb[i][col];
+}
+
+int Board::eval_diagonal_slash(int i, int j, bool is_black_turn)
 {
    int score = 0;
    
    if ((i<4 && j<4) || (i>10) && (j>10)) 
       return score;
 
+   int len = compute_diagonal_slash_target(i, j);
+   score = eval_partial_board(len, is_black_turn);
+
+   return score;
+}
+
+int Board::compute_diagonal_slash_target(int i, int j)
+{
    int len = 0;
-   if (i+j < 15) 
-   {
+   if (i+j < 15) {
       len = i+j+1;
       int row = 0, col = i+j;
       for (; row < len; row++, col--)
@@ -499,8 +546,7 @@ int Board::eval_diagonal_slash(int i, int j)
 
       g_pattern_buffer[len] = 0;
    }
-   else
-   {
+   else {
       int row = i+j-14, col = 14, count = 0;
       len = col-row+1;
       for (; count < len; row++, count++, col--) 
@@ -509,26 +555,26 @@ int Board::eval_diagonal_slash(int i, int j)
       g_pattern_buffer[len] = 0;
    }
 
-   for (int i = 0; i < PATTERN_NUM; i++)
-   {
-      int black_turn_matched = kmp_matcher(g_pattern_buffer, len, s_black_patterns[i], i, s_pattern_len[i]);
-      score += s_positive_score[i]*black_turn_matched;
-      int white_turn_matched = kmp_matcher(g_pattern_buffer, len, s_white_patterns[i], i, s_pattern_len[i]);
-      score -= s_positive_score[i]*white_turn_matched;
-   }
-   return score;
+   return len;
 }
 
-int Board::eval_diagonal_backslash(int i, int j)
+int Board::eval_diagonal_backslash(int i, int j, bool is_black_turn)
 {
    int score = 0;
 
    if ((i<4 && j >10) || (i>10 && j<4)) 
       return score;
 
+   int len = compute_diagonal_backslash_target(i, j);
+   score = eval_partial_board(len, is_black_turn);
+
+   return score;
+}
+
+int Board::compute_diagonal_backslash_target(int i, int j)
+{
    int len = 0;
-   if (i<j) 
-   {
+   if (i<j) {
       len = i-j+15;
       int row = 0, col = j-i;
       for (; row < len; row++, col++) 
@@ -536,8 +582,7 @@ int Board::eval_diagonal_backslash(int i, int j)
 
       g_pattern_buffer[len] = 0;
    }
-   else
-   {
+   else {
       len = j-i+15;
       int row = i-j, col = 0;
       for ( ;row < 15; row++, col++) 
@@ -546,122 +591,157 @@ int Board::eval_diagonal_backslash(int i, int j)
       g_pattern_buffer[len] = 0;
    }
 
-   for (int i = 0; i < PATTERN_NUM; i++)
-   {
-      int black_turn_matched = kmp_matcher(g_pattern_buffer, len, s_black_patterns[i], i, s_pattern_len[i]);
-      score += s_positive_score[i]*black_turn_matched;
-      int white_turn_matched = kmp_matcher(g_pattern_buffer, len, s_white_patterns[i], i, s_pattern_len[i]);
-      score -= s_positive_score[i]*white_turn_matched;
-   }
-
-   return score;
+   return len;
 }
 
-int Board::alpha_beta(int depth, int alpha, int beta, bool bOrW) {
-   //static int pre_value = _IMPOSSIBLE_;
-   //int value;
-   //char grid = bOrW ? 'x' : 'o';
+bool Board::game_over_calculator_helper(int len)
+{
+   int matched = kmp_matcher(g_pattern_buffer, 15, s_black_patterns[0], 0, s_pattern_len[0]);
+   if (matched >= 1) {
+      m_black_win = true;
+      return true;
+   }
 
-   //if (depth == 0) {
-   //   return eval_board();
-   //}
+   matched = kmp_matcher(g_pattern_buffer, 15, s_white_patterns[0], 0, s_pattern_len[0]);
+   if (matched >= 1) {
+      m_white_win = true;
+      return true;
+   }
 
-   //vector<Step*> ss1;
-   //get_next_steps(ss1, grid);
-   //for (size_t ii = 0; ii < ss1.size(); ii++) 
-   //{
-   //   Step *s1 = ss1[ii];
-   //   update_grid_status(s1->i, s1->j, grid);
-   //   vector<Step*> ss2;
-   //   get_next_steps(ss2, grid);
-   //   for (size_t jj = 0; jj < ss2.size(); jj++) 
-   //   {
-   //      Step *s2 = ss2[jj];
-   //      update_grid_status(s2->i, s2->j, grid);
-   //      value = -alpha_beta(depth - 1, -beta, -alpha, !bOrW);
-   //      update_grid_status(s2->i, s2->j, '-');
-   //      if (pre_value == _IMPOSSIBLE_) 
-   //         pre_value = value;
+   return false;
+}
 
-   //      if (pre_value < value) 
-   //         value = pre_value;
-   //   }
-   //   update_grid_status(s1->i, s1->j, '-');
-   //   if (value >= beta) 
-   //      return beta;
+bool Board::is_game_over()
+{
+   int matched = 0;
+   int len;
+   for (int count = 0; count < 15; count++) {
+      compute_horizonal_target(count);
+      if (game_over_calculator_helper(15)) {
+         return true;
+      }
 
-   //   if (value > alpha) 
-   //      alpha = value;
-   //}
+      compute_vertical_target(count);
+      if (game_over_calculator_helper(15)) {
+         return true;
+      } 
+
+      len = compute_diagonal_slash_target(0, count);
+      if (game_over_calculator_helper(len)) {
+         return true;
+      }
+
+      len = compute_diagonal_backslash_target(0, count);
+      if (game_over_calculator_helper(len)) {
+         return true;
+      } 
+   }
+
+   for (int count = 1; count < 15; count++) {
+      len = compute_diagonal_slash_target(14, count);
+      if (game_over_calculator_helper(len)) {
+         return true;
+      }
+
+      len = compute_diagonal_backslash_target(14, count);
+      if (game_over_calculator_helper(len)) {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+int Board::alpha_beta(int depth, int alpha, int beta, bool is_black_turn) {
+   if (depth == 0  || is_game_over()) {
+      return eval_board(is_black_turn);
+   }
+
+   vector<TwoSteps*> two_sptes;
+   char grid = is_black_turn?'x':'o';
+   pre_compute_steps(grid, two_sptes);
+   for (size_t i = 0; i < two_sptes.size(); i++) {
+      TwoSteps *ss = two_sptes[i];
+      g_backup_board.push(*this);
+      update_grid_status(ss->step1.i, ss->step1.j, grid);
+      update_grid_status(ss->step2.i, ss->step2.j, grid);
+      int val = -alpha_beta(depth-1, -beta, -alpha, !is_black_turn);
+      *this = g_backup_board.top();
+      g_backup_board.pop();
+
+      if (val >= beta) {
+         return val;
+      }
+
+      if (val >= alpha) {
+         alpha = val;
+         m_next_best_steps = *ss;
+      }
+   }
+
    return alpha;
 }
 
-void Board::pre_compute_steps(char grid, vector<StepScore*>& ss_vector)
+void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
 {
+   if (m_step_list.empty()) {
+      TwoSteps *ss = new TwoSteps(7,7,9,9);
+      ss_vector.push_back(ss);
+      return;
+   }
+
    set<int> first_steps;
    get_next_steps(first_steps, grid);
 
-   vector<StepScore*> tmp_ss_vector(first_steps.size()*first_steps.size());
    set<int>::const_iterator fs_it = first_steps.begin();
-   for (; fs_it != first_steps.end(); fs_it++) 
-   {
+   for (; fs_it != first_steps.end(); fs_it++) {
       int fs_index = *fs_it;
-      int fs_i = I_FROM_INDEX(fs_index);
-      int fs_j = J_FROM_INDEX(fs_index);
-      //backup board
-      g_backup_board.push(*this);
-      
-      update_grid_status(fs_i, fs_j, grid);
-      //int score = eval_board();
-
-      set<int> second_steps;
-      get_next_steps(second_steps, grid);
-      set<int>::const_iterator ss_it = second_steps.begin();
-      for (; ss_it != second_steps.end(); ss_it++) 
-      {
+      int i = I_FROM_INDEX(fs_index);
+      int j = J_FROM_INDEX(fs_index);
+      set<int>::const_iterator ss_it = first_steps.begin();
+      for (; ss_it != first_steps.end(); ss_it++) {
          int ss_index = *ss_it;
-         int ss_i = I_FROM_INDEX(ss_index);
-         int ss_j = J_FROM_INDEX(ss_index);
-         
-         g_backup_board.push(*this);
-
-         update_grid_status(ss_i, ss_j, grid);
-         //int total_score = score + eval_board();
-         
-         //rollback board
-         *this = g_backup_board.top();
-         g_backup_board.pop();
-         
-         //StepScore *ss = new StepScore(fs_i, fs_j, ss_i, ss_j, total_score);
-         //tmp_ss_vector.push_back(ss);
+         if (ss_index != fs_index) {
+            int ii = I_FROM_INDEX(ss_index);
+            int jj = J_FROM_INDEX(ss_index);
+            if (!is_sibling(i, j, ii, jj)) {
+               TwoSteps *ts = new TwoSteps(i, j, ii, jj);
+               ss_vector.push_back(ts);
+            }
+         }
       }
-      //rollback board
-      *this = g_backup_board.top();
-      g_backup_board.pop();
+   }
+}
+
+bool Board::is_sibling(int i, int j, int ii, int jj)
+{
+   // if two steps are same, return true;
+   if (i == ii && j == j) {
+      return true;
    }
 
-   //sort the temp ss vector and only get the first 50 largest scored steps.
+   if ( ii>=i-1 && ii <= i+1 && jj >= j-1 && jj <= j+1) {
+      return true;
+   }
 
+   return false;
 }
 
 void Board::print_board()
 {
    cout<<"   ";
-   for (int i = 0; i < 15; i++) 
-   {
+   for (int i = 0; i < 15; i++) {
       cout<<i<<"  ";
    }
    cout<<endl;
 
-   for (int i = 0; i < 15; i++) 
-   {
+   for (int i = 0; i < 15; i++) {
       if (i < 10) 
          cout<<i<<"  ";
       else
          cout<<i<<" ";
 
-      for (int j = 0; j < 15; j++) 
-      {
+      for (int j = 0; j < 15; j++) {
          if (j < 10) 
             cout<<m_bb[i][j]<<"  ";
          else
@@ -669,6 +749,50 @@ void Board::print_board()
       }
       cout<<endl;
    }
+}
+
+void Board::self_gamming()
+{
+   bool black_turn = true;
+   char grid;
+   while (!is_game_over()) {
+      grid = black_turn?'x':'o';
+      alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, black_turn);
+      TwoSteps& ts = best_steps();
+      if(black_turn) {
+         cout <<"black";
+      }
+      else {
+         cout << "white";
+      }
+      cout << " next step: (" << ts.step1.i <<", " << ts.step1.j 
+         << "), (" << ts.step2.i << ", " << ts.step2.j << ")" << endl;
+      update_grid_status(ts.step1.i, ts.step1.j, grid);
+      update_grid_status(ts.step2.i, ts.step2.j, grid);
+      print_board();
+      int score = eval_board(true);
+      cout << "black score: " << score << endl;
+      score = eval_board(false);
+      cout << "white score: " << score << endl;
+      cout << endl;
+      black_turn = !black_turn;
+   }
+
+   if (m_black_win) {
+      cout << "black wins" << endl;
+   }
+   else if (m_white_win) {
+      cout << "white wins" << endl;
+   }
+   else {
+      cout << "bug!" << endl;
+   }
+}
+
+bool Board::is_avaliable_grid(int i, int j)
+{
+   int index_key = INDEX_KEY(i,j);
+   return m_grid_available[index_key];
 }
 
 // some unit test functions
@@ -680,23 +804,54 @@ int _tmain(int argc, _TCHAR* argv[])
 
    compute_failure_function();
    Board b1;
-   vector<Step*> steps;
-   b1.update_grid_status(8,8,'x');
-   b1.update_grid_status(6,8,'x');
-   b1.update_grid_status(1,1,'o');
-   b1.update_grid_status(3,1,'o');
-   b1.update_grid_status(8,9,'x');
-   b1.update_grid_status(6,7,'x');
-   b1.update_grid_status(2,1,'o');
-   b1.update_grid_status(2,3,'o');
+   char buf[4];
+   //b1.self_gamming();
    b1.print_board();
+   while (!b1.is_game_over())
+   {
+      Step s1, s2;
+      for (int i=0; i<2; i++) {
+         cout << "enter 2 (i,j), for example 2,3" << endl;
+         memset(buf, 0, 4);
+         cin >> buf;
+         if (i == 0) {
+            s1.i = atoi(&buf[0]);
+            s1.j = atoi(&buf[2]);
+         }
+         else {
+            int i = atoi(&buf[0]);
+            int j = atoi(&buf[2]);
+            while(b1.is_sibling(s1.i, s1.j, i, j) || !b1.is_avaliable_grid(i, j)) {
+               memset(buf, 0, 4);
+               cin >> buf;
+            }
+            s2.i = atoi(&buf[0]);
+            s2.j = atoi(&buf[2]);
+         }
+      }
+      b1.update_grid_status(s1.i, s1.j, 'x');
+      b1.update_grid_status(s1.i, s1.j, 'x');
+      if (b1.is_game_over()) {
+         break;
+      }
+      b1.print_board();
 
-   vector<StepScore*> ss;
-   b1.pre_compute_steps('x', ss);
+      b1.alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, false);
+      TwoSteps& ts = b1.best_steps();
+      b1.update_grid_status(ts.step1.i, ts.step1.j, 'o');
+      b1.update_grid_status(ts.step2.i, ts.step2.j, 'o');
+      b1.print_board();
+   }
 
-   int score = b1.eval_board();
-   //testing
-   //test_kmp_matcher();
+   if (b1.m_black_win) {
+      cout << "black wins" << endl;
+   }
+   else if (b1.m_white_win) {
+      cout << "white wins" << endl;
+   }
+   else {
+      cout << "bug!" << endl;
+   }
 
    clock_t end = clock();
    cout << end-begin << endl;
