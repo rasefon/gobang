@@ -15,7 +15,7 @@ using namespace std;
 //#define DYM_EVAL
 
 #define POTENTIAL_GEP 1
-#define DEPTH 3
+#define DEPTH 2
 
 #define INDEX_KEY(i,j) (i*100+j)
 #define I_FROM_INDEX(index) (index/100)
@@ -23,9 +23,9 @@ using namespace std;
 
 #define _INFINITE_ 2147483646
 #define _IMPOSSIBLE_ 2147483647
-#define WIN_SCORE 500000
+#define WIN_SCORE 100000
 
-#define PATTERN_NUM 35
+#define PATTERN_NUM 15
 
 struct Step
 {
@@ -111,13 +111,15 @@ public:
    bool is_avaliable_grid(int i, int j);
    bool is_valid_next_step(int i, int j, char grid);
    bool is_sibling(int i, int j, int ii, int jj);
-   int alpha_beta(int depth, int alpha, int beta, bool bOrW);
+   int alpha_beta_max(int depth, int alpha, int beta, bool is_black_turn);
+   int alpha_beta_min(int depth, int alpha, int beta, bool is_black_turn);
 
    void pre_compute_steps(char grid, vector<TwoSteps*>& ssVector);
 
    void print_board();
 
    void self_gamming();
+   void game();
 
    TwoSteps& best_steps() { return m_next_best_steps; }
 private:
@@ -133,33 +135,28 @@ stack<Board> g_backup_board;
 
 //x: black, o:white
 static char* s_black_patterns[] = {
-   "xxxxx", //0
-   "-xxxx-", //1
-   "oxxxx-", "-xxxxo", "x-xxx", "xx-xx", "xxx-x", "xxxx-", "-xxxx",
-   "--xxx-", "-xxx--", "-xx-x-", "-x-xx-", 
-   "oxxx--", "oxx-x-", "ox-xx-", "--xxxo", "-x-xxo", "-xx-xo", "xx--x", "x--xx", "x-x-x", "o-xxx-", "-xxx-o", //11~21
-   "--xx--", "--x-x-", "-x-x--", "-x--x-",
-   "oxx---", "ox-x--", "ox--x-", "---xxo", "--x-xo", "-x--xo", "x---x"
+   // win
+   "xxxxx", 
+   // win in next step
+   "-xxxx", "x-xxx", "xx-xx", "xxx-x", "xxxx-", "-xxx-", "x--xx", "-x-xx", "-xx-x", "x-xx-", "xx-x-", "x-x-x",
+   "-xx-", 
+   "-x-"
 };
 
 static char* s_white_patterns[] = {
-   "ooooo",
-   "-oooo-", 
-   "xoooo-", "-oooox", "o-ooo", "oo-oo", "ooo-o", "oooo-", "-oooo"
-   "--ooo-", "-ooo--", "-oo-o-", "-o-oo-",
-   "xooo--", "xoo-o-", "xo-oo-", "--ooox", "-o-oox", "-oo-ox", "oo--o", "o--oo", "o-o-o", "x-ooo-", "-ooo-x",
-   "--oo--", "--o-o-", "-o-o--", "-o--o-",
-   "xoo---", "xo-o--", "xo--o-", "---oox", "--o-ox", "-o--ox", "o---o"
+   // win
+   "ooooo", 
+   // win in next step
+   "-oooo", "o-ooo", "oo-oo", "ooo-o", "oooo-", "-ooo-", "o--oo", "-o-oo", "-oo-o", "o-oo-", "oo-o-", "o-o-o",
+   "-oo-", 
+   "-o-"
 };
 
 static int s_positive_score[] = {
    WIN_SCORE,
-   10000,
-   5000, 5000, 5000, 5000, 5000, 5000, 5000,
-   1000, 1000, 1000, 1000,
-   500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
-   50, 50, 50, 50,
-   10, 10, 10, 10, 10, 10, 10
+   2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 
+   700, 
+   100 
 };
 
 // kmp string compare.
@@ -652,8 +649,9 @@ bool Board::is_game_over()
    return false;
 }
 
-int Board::alpha_beta(int depth, int alpha, int beta, bool is_black_turn) {
-   if (depth == 0  || is_game_over()) {
+int Board::alpha_beta_max(int depth, int alpha, int beta, bool is_black_turn)
+{
+   if (depth ==0 /*|| is_game_over()*/) {
       return eval_board(is_black_turn);
    }
 
@@ -665,21 +663,72 @@ int Board::alpha_beta(int depth, int alpha, int beta, bool is_black_turn) {
       g_backup_board.push(*this);
       update_grid_status(ss->step1.i, ss->step1.j, grid);
       update_grid_status(ss->step2.i, ss->step2.j, grid);
-      int val = -alpha_beta(depth-1, -beta, -alpha, !is_black_turn);
+      int score = alpha_beta_min(depth-1, alpha, beta, is_black_turn);
       *this = g_backup_board.top();
       g_backup_board.pop();
 
-      if (val >= beta) {
-         return val;
+      if (score >= beta) {
+         alpha = score;
+         goto Exit;
       }
 
-      if (val >= alpha) {
-         alpha = val;
-         m_next_best_steps = *ss;
+      if (score > alpha) {
+         alpha = score;
+         if (depth == DEPTH) {
+            m_next_best_steps = *ss;
+         }
       }
    }
 
+   //release memory
+Exit:
+   vector<TwoSteps*>::iterator it = two_sptes.begin();
+   for (; it != two_sptes.end(); it++) {
+      delete *it;
+   }
+   two_sptes.clear();
+
    return alpha;
+}
+
+int Board::alpha_beta_min(int depth, int alpha, int beta, bool is_black_turn)
+{
+   if (depth ==0/* || is_game_over()*/) {
+      return eval_board(!is_black_turn);
+   }
+
+   vector<TwoSteps*> two_sptes;
+   // attention!!!
+   char grid = is_black_turn?'o':'x';
+   pre_compute_steps(grid, two_sptes);
+   for (size_t i = 0; i < two_sptes.size(); i++) {
+      TwoSteps *ss = two_sptes[i];
+      g_backup_board.push(*this);
+      update_grid_status(ss->step1.i, ss->step1.j, grid);
+      update_grid_status(ss->step2.i, ss->step2.j, grid);
+      int score = alpha_beta_max(depth-1, alpha, beta, is_black_turn);
+      *this = g_backup_board.top();
+      g_backup_board.pop();
+
+      if (score <= alpha) {
+         beta = score;
+         goto Exit;
+      }
+
+      if (score < beta) {
+         beta = score;
+      }
+   }
+
+   //release memory
+Exit:
+   vector<TwoSteps*>::iterator it = two_sptes.begin();
+   for (; it != two_sptes.end(); it++) {
+      delete *it;
+   }
+   two_sptes.clear();
+
+   return beta;
 }
 
 void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
@@ -693,6 +742,8 @@ void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
    set<int> first_steps;
    get_next_steps(first_steps, grid);
 
+   set<int> ts_buffer;
+
    set<int>::const_iterator fs_it = first_steps.begin();
    for (; fs_it != first_steps.end(); fs_it++) {
       int fs_index = *fs_it;
@@ -705,11 +756,28 @@ void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
             int ii = I_FROM_INDEX(ss_index);
             int jj = J_FROM_INDEX(ss_index);
             if (!is_sibling(i, j, ii, jj)) {
-               TwoSteps *ts = new TwoSteps(i, j, ii, jj);
-               ss_vector.push_back(ts);
+               int ts_index;
+               if (fs_index < ss_index) {
+                  ts_index = ss_index*10000+fs_index;
+               }
+               else {
+                  ts_index = fs_index*10000+ss_index;
+               }
+               ts_buffer.insert(ts_index);
             }
          }
       }
+   }
+
+   for (set<int>::const_iterator ts_it = ts_buffer.begin(); ts_it != ts_buffer.end(); ts_it++) {
+      int fs_index = (*ts_it)/10000;
+      int ss_index = (*ts_it)%10000;
+      int i = I_FROM_INDEX(fs_index);
+      int j = J_FROM_INDEX(fs_index);
+      int ii = I_FROM_INDEX(ss_index);
+      int jj = J_FROM_INDEX(ss_index);
+      TwoSteps *ts = new TwoSteps(i, j, ii, jj);
+      ss_vector.push_back(ts);
    }
 }
 
@@ -757,7 +825,7 @@ void Board::self_gamming()
    char grid;
    while (!is_game_over()) {
       grid = black_turn?'x':'o';
-      alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, black_turn);
+      //nega_alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, black_turn);
       TwoSteps& ts = best_steps();
       if(black_turn) {
          cout <<"black";
@@ -795,6 +863,99 @@ bool Board::is_avaliable_grid(int i, int j)
    return m_grid_available[index_key];
 }
 
+void Board::game()
+{
+   char buf[6];
+   //b1.self_gamming();
+   print_board();
+   while (!is_game_over())
+   {
+      Step s1, s2;
+      for (int i=0; i<2; i++) {
+         cout << "enter 2 (i,j), for example 2,3" << endl;
+         memset(buf, 0, 6);
+         cin >> buf;
+         if (i == 0) {
+            s1.i = atoi(&buf[0]);
+
+            int next = 1;
+            while(buf[next++]!=',');
+
+            s1.j = atoi(&buf[next]);
+
+            while(!is_avaliable_grid(s1.i, s1.j)) {
+               cout << "invalid input!" <<endl;
+               memset(buf, 0, 6);
+               cin >> buf;
+
+               next = 1;
+               while(buf[next++]!=',');
+
+               s1.i = atoi(&buf[0]);
+               s1.j = atoi(&buf[next]);
+            }
+         }
+         else {
+            int i = atoi(&buf[0]);
+
+            int next = 1;
+            while(buf[next++]!=',');
+
+            int j = atoi(&buf[next]);
+
+            while(is_sibling(s1.i, s1.j, i, j) || !is_avaliable_grid(i, j)) {
+               cout << "invalid input!" <<endl;
+               memset(buf, 0, 6);
+               cin >> buf;
+
+               next = 1;
+               while(buf[next++]!=',');
+
+               i = atoi(&buf[0]);
+               j = atoi(&buf[next]);
+            }
+            s2.i = i;
+            s2.j = j;
+         }
+      }
+      update_grid_status(s1.i, s1.j, 'x');
+      update_grid_status(s2.i, s2.j, 'x');
+      if (is_game_over()) {
+         print_board();
+         break;
+      }
+      print_board();
+      int score = eval_board(true);
+      cout << "black score: " << score << endl;
+      score = eval_board(false);
+      cout << "white score: " << score << endl;
+      cout << endl;
+
+      int potential_score = alpha_beta_max(DEPTH, -_INFINITE_, _INFINITE_, false);
+      TwoSteps& ts = best_steps();
+      cout << "white steps: (" << ts.step1.i <<","<<ts.step1.j<<") ("<<ts.step2.i<<","<<ts.step2.j<<")" <<endl;
+      update_grid_status(ts.step1.i, ts.step1.j, 'o');
+      update_grid_status(ts.step2.i, ts.step2.j, 'o');
+      print_board();
+      score = eval_board(true);
+      cout << "potential score: " << potential_score << endl;
+      cout << "black score: " << score << endl;
+      score = eval_board(false);
+      cout << "white score: " << score << endl;
+      cout << endl;
+   }
+
+   if (m_black_win) {
+      cout << "black wins" << endl;
+   }
+   else if (m_white_win) {
+      cout << "white wins" << endl;
+   }
+   else {
+      cout << "bug!" << endl;
+   }
+}
+
 // some unit test functions
 void test_kmp_matcher();
 
@@ -803,68 +964,12 @@ int _tmain(int argc, _TCHAR* argv[])
    clock_t begin = clock();
 
    compute_failure_function();
+
    Board b1;
-   char buf[4];
-   //b1.self_gamming();
-   b1.print_board();
-   while (!b1.is_game_over())
-   {
-      Step s1, s2;
-      for (int i=0; i<2; i++) {
-         cout << "enter 2 (i,j), for example 2,3" << endl;
-         memset(buf, 0, 4);
-         cin >> buf;
-         if (i == 0) {
-            s1.i = atoi(&buf[0]);
-            s1.j = atoi(&buf[2]);
-         }
-         else {
-            int i = atoi(&buf[0]);
-            int j = atoi(&buf[2]);
-            while(b1.is_sibling(s1.i, s1.j, i, j) || !b1.is_avaliable_grid(i, j)) {
-               cout << "invalid input!" <<endl;
-               memset(buf, 0, 4);
-               cin >> buf;
-               i = atoi(&buf[0]);
-               j = atoi(&buf[2]);
-            }
-            s2.i = i;
-            s2.j = j;
-         }
-      }
-      b1.update_grid_status(s1.i, s1.j, 'x');
-      b1.update_grid_status(s2.i, s2.j, 'x');
-      if (b1.is_game_over()) {
-         break;
-      }
-      b1.print_board();
-      int score = b1.eval_board(true);
-      cout << "black score: " << score << endl;
-      score = b1.eval_board(false);
-      cout << "white score: " << score << endl;
-      cout << endl;
-
-      b1.alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, false);
-      TwoSteps& ts = b1.best_steps();
-      b1.update_grid_status(ts.step1.i, ts.step1.j, 'o');
-      b1.update_grid_status(ts.step2.i, ts.step2.j, 'o');
-      b1.print_board();
-      score = b1.eval_board(true);
-      cout << "black score: " << score << endl;
-      score = b1.eval_board(false);
-      cout << "white score: " << score << endl;
-      cout << endl;
-   }
-
-   if (b1.m_black_win) {
-      cout << "black wins" << endl;
-   }
-   else if (b1.m_white_win) {
-      cout << "white wins" << endl;
-   }
-   else {
-      cout << "bug!" << endl;
-   }
+   b1.game();
+   //b1.update_grid_status(7, 7, 'x');
+   //b1.update_grid_status(7, 9, 'x');
+   //b1.nega_alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, false);
 
    clock_t end = clock();
    cout << end-begin << endl;
