@@ -694,7 +694,7 @@ Exit:
 int Board::alpha_beta_min(int depth, int alpha, int beta, bool is_black_turn)
 {
    if (depth ==0/* || is_game_over()*/) {
-      return eval_board(!is_black_turn);
+      return eval_board(is_black_turn);
    }
 
    vector<TwoSteps*> two_sptes;
@@ -799,7 +799,12 @@ void Board::print_board()
 {
    cout<<"   ";
    for (int i = 0; i < 15; i++) {
-      cout<<i<<"  ";
+      if (i<10) {
+         cout<<i<<"  ";
+      }
+      else {
+         cout<<i<<" ";
+      }
    }
    cout<<endl;
 
@@ -813,7 +818,7 @@ void Board::print_board()
          if (j < 10) 
             cout<<m_bb[i][j]<<"  ";
          else
-            cout<<m_bb[i][j]<<"   ";
+            cout<<m_bb[i][j]<<"  ";
       }
       cout<<endl;
    }
@@ -933,12 +938,12 @@ void Board::game()
 
       int potential_score = alpha_beta_max(DEPTH, -_INFINITE_, _INFINITE_, false);
       TwoSteps& ts = best_steps();
-      cout << "white steps: (" << ts.step1.i <<","<<ts.step1.j<<") ("<<ts.step2.i<<","<<ts.step2.j<<")" <<endl;
       update_grid_status(ts.step1.i, ts.step1.j, 'o');
       update_grid_status(ts.step2.i, ts.step2.j, 'o');
       print_board();
+      cout << "white steps: (" << ts.step1.i <<","<<ts.step1.j<<") ("<<ts.step2.i<<","<<ts.step2.j<<")" <<endl;
       score = eval_board(true);
-      cout << "potential score: " << potential_score << endl;
+      cout << "white potential score: " << potential_score << endl;
       cout << "black score: " << score << endl;
       score = eval_board(false);
       cout << "white score: " << score << endl;
