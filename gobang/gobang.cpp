@@ -17,7 +17,7 @@ using namespace std;
 #define POTENTIAL_GEP 1
 #define DEPTH 2
 
-#define INDEX_KEY(i,j) (i*100+j)
+#define STEP_INDEX(i,j) (i*100+j)
 #define I_FROM_INDEX(index) (index/100)
 #define J_FROM_INDEX(index) (index%100)
 
@@ -25,7 +25,7 @@ using namespace std;
 #define _IMPOSSIBLE_ 2147483647
 #define WIN_SCORE 100000
 
-#define PATTERN_NUM 15
+#define PATTERN_NUM 19
 
 struct Step
 {
@@ -84,7 +84,7 @@ public:
    int m_pre_diagonal_backslash[21];
 #endif
 
-   // steps, computed from INDEX_KEY macro.  
+   // steps, computed from STEP_INDEX macro.  
    set<int> m_step_list;
 public:
    Board();
@@ -139,7 +139,7 @@ static char* s_black_patterns[] = {
    "xxxxx", 
    // win in next step
    "-xxxx", "x-xxx", "xx-xx", "xxx-x", "xxxx-", "-xxx-", "x--xx", "-x-xx", "-xx-x", "x-xx-", "xx-x-", "x-x-x",
-   "-xx-", 
+   "-xx-", "x---x", "-x-x-", "x--x-", "-x--x", 
    "-x-"
 };
 
@@ -148,14 +148,14 @@ static char* s_white_patterns[] = {
    "ooooo", 
    // win in next step
    "-oooo", "o-ooo", "oo-oo", "ooo-o", "oooo-", "-ooo-", "o--oo", "-o-oo", "-oo-o", "o-oo-", "oo-o-", "o-o-o",
-   "-oo-", 
+   "-oo-", "o---o", "-o-o-", "o--o-", "-o--o",
    "-o-"
 };
 
 static int s_positive_score[] = {
    WIN_SCORE,
    2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000, 
-   700, 
+   700, 700, 700, 700, 700, 
    100 
 };
 
@@ -220,14 +220,14 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
    return pattern_matched;
 }
 
-//static int ranged_rand(int range_min, int range_max)
-//{
-//   // Generate random numbers in the half-closed interval
-//   // [range_min, range_max). In other words,
-//   // range_min <= random number < range_max
-//   int u = (double)rand() / (RAND_MAX + 1) * (range_max - range_min) + range_min;
-//   return u;
-//}
+static int ranged_rand(int range_min, int range_max)
+{
+   // Generate random numbers in the half-closed interval
+   // [range_min, range_max). In other words,
+   // range_min <= random number < range_max
+   int u = (double)rand() / (RAND_MAX + 1) * (range_max - range_min) + range_min;
+   return u;
+}
 
 
 Board::~Board()
@@ -245,7 +245,7 @@ Board::Board(): m_black_win(false), m_white_win(false)
    for (int i = 0; i < 15; i++)  {
       for (int j = 0; j < 15; j++) {
          m_bb[i][j] = '-';
-         int grid_index_key = INDEX_KEY(i,j);
+         int grid_index_key = STEP_INDEX(i,j);
          m_grid_available[grid_index_key] = true;
       }
    }
@@ -333,7 +333,7 @@ void Board::update_grid_status(int i, int j, char grid)
    m_pre_round = grid;
 
    if ('-' != grid) {
-      int index = INDEX_KEY(i,j);
+      int index = STEP_INDEX(i,j);
       m_grid_available[index] = false;
       m_step_list.insert(index);
 
@@ -383,6 +383,8 @@ void Board::get_next_steps(set<int>& steps, char grid)
          }
       }
    }
+
+   //Add one random step
 }
 
 void Board::get_steps_from_center_step(int i, int j, char grid, vector<int>& steps)
@@ -405,7 +407,7 @@ void Board::get_steps_from_center_step(int i, int j, char grid, vector<int>& ste
 
    for (int x = left; x <= right; x++) {
       for (int y = top; y <= buttom; y++) {
-         int index = INDEX_KEY(x,y);
+         int index = STEP_INDEX(x,y);
          if (m_grid_available[index] && is_valid_next_step(x, y, grid)) {
             steps.push_back(index);
          }
@@ -864,7 +866,7 @@ void Board::self_gamming()
 
 bool Board::is_avaliable_grid(int i, int j)
 {
-   int index_key = INDEX_KEY(i,j);
+   int index_key = STEP_INDEX(i,j);
    return m_grid_available[index_key];
 }
 
