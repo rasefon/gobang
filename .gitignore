@@ -1,0 +1,14 @@
+Debug/
+Release/
+x64
+gobang/Debug/
+gobang/Release/
+gobang/x64/
+*.user
+*.out
+*.opensdf
+*.psess
+*.sdf
+*.suo
+*.vsp
+tags
