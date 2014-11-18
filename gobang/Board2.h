@@ -57,6 +57,14 @@ namespace BetterBoard
    // Board, from (0,0) ~ (14,14)
    class Board2
    {
+      // set (1,j) bit to 1.
+      static _uint64_ set_bit_helper(_uint64_ org_value, int i, int j);
+      // ***** 0x1f pattern
+      static _uint64_ s_1f_hor_patterns[44];
+      static void init_1f_hor_patterns();
+      static _uint64_ s_1f_ver_patterns[4][64];
+      static void init_1f_ver_patterns();
+
    private:
       // bitmap as board, use 2 long long array to represent black and white pieces.
       _uint64_ m_white_piece[4];
@@ -67,7 +75,7 @@ namespace BetterBoard
    private:
       inline _uint64_ get_mask(int i, int j, int& piece_index) {
          piece_index = i/4;
-         int mask_second_index = 63-(16*(i%4)+j);
+         int mask_second_index = (i%4)*16+j;
          return m_mask[piece_index][mask_second_index];
       }
 

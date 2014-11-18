@@ -169,9 +169,44 @@ void Board2::test_board2()
 {
    Board2 b2;
    b2.update_grid_status(13,13,PieceType::white);
+   b2.update_grid_status(13,14,PieceType::white);
    b2.update_grid_status(2,11,PieceType::black);
+   b2.update_grid_status(3,11,PieceType::black);
    vector<StepsPair*> sp_vector;
    b2.generate_next_step_pair(sp_vector);
 
+   init_1f_hor_patterns();
+
+   cout << 0xf800000000000000 <<endl;
    cout<<"placeholder"<<endl;
+}
+
+_uint64_ Board2::set_bit_helper(_uint64_ org_value, int i, int j)
+{
+   // 4*16
+   _uint64_ mask = 1<<(16*i+j);
+   return (org_value|mask);
+}
+
+_uint64_ Board2::s_1f_hor_patterns[44];
+void Board2::init_1f_hor_patterns()
+{
+   _uint64_ seed = 0x1f;
+   for (int i=0; i<44; i++) {
+      s_1f_hor_patterns[i] = seed;
+      seed = seed<<1;
+      if (i%11 == 0 && i != 0) {
+         seed = seed << 5;
+      }
+   }
+}
+
+_uint64_ Board2::s_1f_ver_patterns[4][64];
+void Board2::init_1f_ver_patterns()
+{
+   for (int i=0; i<4; i++) {
+      for (int j=0; j<64; j++) {
+
+      }
+   }
 }
