@@ -9,21 +9,12 @@
 #include <string>
 #include <vector>
 #include <time.h>
+#include "Board2.h"
 
 using namespace std;
 
 //#define DYM_EVAL
 
-#define POTENTIAL_GEP 1
-#define DEPTH 2
-
-#define STEP_INDEX(i,j) (i*100+j)
-#define I_FROM_INDEX(index) (index/100)
-#define J_FROM_INDEX(index) (index%100)
-
-#define _INFINITE_ 2147483646
-#define _IMPOSSIBLE_ 2147483647
-#define WIN_SCORE 100000
 
 #define PATTERN_NUM 19
 
@@ -743,6 +734,12 @@ void Board::pre_compute_steps(char grid, vector<TwoSteps*>& ss_vector)
 
    set<int> first_steps;
    get_next_steps(first_steps, grid);
+   if (first_steps.find(707) == first_steps.end() && is_avaliable_grid(7,7)) {
+      first_steps.insert(707);
+   }
+   if (first_steps.find(709) == first_steps.end() && is_avaliable_grid(7,9)) {
+      first_steps.insert(709);
+   }
 
    set<int> ts_buffer;
 
@@ -972,12 +969,14 @@ int _tmain(int argc, _TCHAR* argv[])
 
    compute_failure_function();
 
-   Board b1;
-   b1.game();
+   //Board b1;
+   //b1.game();
    //b1.update_grid_status(7, 7, 'x');
    //b1.update_grid_status(7, 9, 'x');
-   //b1.nega_alpha_beta(DEPTH, -_INFINITE_, _INFINITE_, false);
 
+   //testing
+   BetterBoard::Board2::test_board2();
+   
    clock_t end = clock();
    cout << end-begin << endl;
    return 0;
