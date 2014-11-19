@@ -11,4 +11,5 @@ gobang/x64/
 *.sdf
 *.suo
 *.vsp
+*.sln
 tags

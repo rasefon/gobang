@@ -28,25 +28,41 @@ void Board2::init()
 
 void Board2::update_grid_status(int i, int j, PieceType pt)
 {
-   int piece_index;
-   _uint64_ mask = get_mask(i, j, piece_index);
+   int block_index;
+   _uint64_ mask = get_mask(i, j, block_index);
    if (pt == PieceType::empty) {
       mask = ~mask;
-      m_black_piece[piece_index] &= mask;
-      m_white_piece[piece_index] &= mask;
+      m_black_piece[block_index] &= mask;
+      m_white_piece[block_index] &= mask;
    }
    else if (pt == PieceType::white) {
-      m_white_piece[piece_index] |= mask;
+      m_white_piece[block_index] |= mask;
    }
    else {
-      m_black_piece[piece_index] |= mask;
+      m_black_piece[block_index] |= mask;
    }
 }
 
-bool Board2::is_occupied(int piece_index, _uint64_ mask)
+bool Board2::is_occupied(int block_index, _uint64_ mask)
 {
-   if ((m_black_piece[piece_index] | m_white_piece[piece_index]) & mask) {
+   if ((m_black_piece[block_index] | m_white_piece[block_index]) & mask) {
       return true;
+   }
+
+   return false;
+}
+
+bool Board2::is_occupied(int block_index, _uint64_ mask, PieceType pt)
+{
+   if (pt == PieceType::white) {
+      if (m_white_piece[block_index] & mask) {
+         return true;
+      }
+   } 
+   else if (pt == PieceType::black){
+      if (m_black_piece[block_index] & mask) {
+         return true;
+      }
    }
 
    return false;
@@ -75,11 +91,11 @@ void Board2::generate_next_step_pair(vector<StepsPair*>& sp_vector)
    }
 
    set<int> first_steps;
-   int piece_index;
+   int block_index;
    for (int i = 0; i < 15; i++) {
       for (int j = 0; j < 15; j++) {
-         _uint64_ mask = get_mask(i, j, piece_index);
-         if (is_occupied(piece_index, mask)) {
+         _uint64_ mask = get_mask(i, j, block_index);
+         if (is_occupied(block_index, mask)) {
             get_steps_from_center_step(i, j, first_steps);
          }
       }
@@ -171,42 +187,115 @@ void Board2::test_board2()
    b2.update_grid_status(13,13,PieceType::white);
    b2.update_grid_status(13,14,PieceType::white);
    b2.update_grid_status(2,11,PieceType::black);
-   b2.update_grid_status(3,11,PieceType::black);
+   b2.update_grid_status(4,12,PieceType::black);
+   b2.update_grid_status(11,8,PieceType::white);
+   b2.update_grid_status(7,4,PieceType::white);
    vector<StepsPair*> sp_vector;
    b2.generate_next_step_pair(sp_vector);
 
-   init_1f_hor_patterns();
+   _uint64_ r1 = b2.get_hor_row(13, PieceType::white);
+   _uint64_ r2 = b2.get_hor_row(2, PieceType::black);
+   _uint64_ r3 = b2.get_hor_row(5, PieceType::white);
+   _uint64_ c1 = b2.get_ver_col(13, PieceType::white);
+   _uint64_ c2 = b2.get_ver_col(11, PieceType::black);
+   _uint64_ c3 = b2.get_ver_col(5, PieceType::white);
+   _uint64_ s1 = b2.get_slash_bits(13, true, PieceType::black);
+   _uint64_ s2 = b2.get_slash_bits(5, false, PieceType::white);
+   _uint64_ bs1 = b2.get_backslash_bits(3, false, PieceType::white);
+   _uint64_ bs2 = b2.get_backslash_bits(6, true, PieceType::black);
 
-   cout << 0xf800000000000000 <<endl;
    cout<<"placeholder"<<endl;
 }
 
-_uint64_ Board2::set_bit_helper(_uint64_ org_value, int i, int j)
+_uint64_ Board2::set_16bit_helper(_uint64_ org_val, int i)
 {
-   // 4*16
-   _uint64_ mask = 1<<(16*i+j);
-   return (org_value|mask);
+   _uint64_ mask = 1<<i;
+   return (org_val|mask);
 }
 
-_uint64_ Board2::s_1f_hor_patterns[44];
-void Board2::init_1f_hor_patterns()
+_uint64_ Board2::get_hor_row(int row, PieceType pt)
 {
-   _uint64_ seed = 0x1f;
-   for (int i=0; i<44; i++) {
-      s_1f_hor_patterns[i] = seed;
-      seed = seed<<1;
-      if (i%11 == 0 && i != 0) {
-         seed = seed << 5;
-      }
+   int block_index = row/4;
+   int sub_index = row&0x03;
+   _uint64_ block;
+   if (pt == PieceType::white) {
+      block = m_white_piece[block_index];
    }
+   else {
+      block = m_black_piece[block_index];
+   }
+   block = block >> (16*sub_index);
+   _uint64_ mask = 0xffff;
+   return (block & mask);
 }
 
-_uint64_ Board2::s_1f_ver_patterns[4][64];
-void Board2::init_1f_ver_patterns()
+_uint64_ Board2::get_ver_col(int col, PieceType pt)
 {
-   for (int i=0; i<4; i++) {
-      for (int j=0; j<64; j++) {
-
+   _uint64_ col_val = 0;
+   for (int i = 0; i < 15; i++) {
+      int block_index = i/4;
+      _uint64_ mask = get_mask(i, col, block_index);
+      if (is_occupied(block_index, mask, pt)) {
+         col_val = set_16bit_helper(col_val, i);
       }
    }
+   return col_val;
+}
+
+_uint64_ Board2::get_slash_bits(int row, bool up, PieceType pt)
+{
+   if ((up && row<4) || (!up && row>10)) {
+      return 0;
+   }
+
+   _uint64_ slash_val = 0;
+   if (up) {
+      for (int i = row, j = 14; i >= 0; i--, j--) {
+         int block_index = i/4;
+         _uint64_ mask = get_mask(i, j, block_index);
+         if (is_occupied(block_index, mask, pt)) {
+            slash_val = set_16bit_helper(slash_val, row-i);
+         }
+      }
+   }
+   else {
+      for (int i = row, j=0; i <= 14; i++, j++) {
+         int block_index = i/4;
+         _uint64_ mask = get_mask(i, j, block_index);
+         if (is_occupied(block_index, mask, pt)) {
+            slash_val = set_16bit_helper(slash_val, i-row);
+         }
+      }
+   }
+
+   return slash_val;
+}
+
+_uint64_ Board2::get_backslash_bits(int row, bool up, PieceType pt)
+{
+   if ((up && row<4) || (!up && row>10)) {
+      return 0;
+   }
+
+   _uint64_ backslash_val = 0;
+   if (up) {
+      for (int i = row, j = 14; i >=0; i--, j--) {
+         int block_index = i/4;
+         _uint64_ mask = get_mask(i, j, block_index);
+         if (is_occupied(block_index, mask, pt)) {
+            backslash_val = set_16bit_helper(backslash_val, row-i);
+         }
+      }
+   } 
+   else {
+      for (int i = row, j = 0; i <=14; i++, j++) {
+         int block_index = i/4;
+         _uint64_ mask = get_mask(i, j, block_index);
+         if (is_occupied(block_index, mask, pt)) {
+            backslash_val = set_16bit_helper(backslash_val, i-row);
+         }
+      }
+   }
+
+   return backslash_val;
 }
