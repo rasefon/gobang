@@ -4,7 +4,7 @@
 
 using namespace BetterBoard;
 
-Board2::Board2()
+Board2::Board2():m_is_computer_black(true)
 {
    init();
 }
@@ -204,6 +204,12 @@ void Board2::test_board2()
    _uint64_ bs1 = b2.get_backslash_bits(3, false, PieceType::white);
    _uint64_ bs2 = b2.get_backslash_bits(6, true, PieceType::black);
 
+
+   Board2 b3;
+   b3.update_grid_status(7, 7, PieceType::black);
+   b3.update_grid_status(7, 9, PieceType::black);
+   int score = b3.eval_board();
+
    cout<<"placeholder"<<endl;
 }
 
@@ -299,3 +305,99 @@ _uint64_ Board2::get_backslash_bits(int row, bool up, PieceType pt)
 
    return backslash_val;
 }
+
+int Board2::eval_partial_board(_uint64_ partial_board)
+{
+   int partial_score = 0;
+   for (int pi = 0; pi < 19; pi++) {
+      _uint64_ pattern = s_patterns[pi];
+      for (int ls_count = 0; ls_count < s_lshift_count[pi]; ls_count++) {
+         if ((partial_board & pattern) == pattern) {
+            partial_score += s_score[pi];
+         }
+         pattern = pattern<<1;
+      }
+   }
+   return partial_score;
+}
+
+int Board2::eval_hor_board_helper(PieceType pt)
+{
+   int piece_score = 0;
+   _uint64_ board_row;
+   for (int i = 0; i < 14; i++) {
+      board_row = get_hor_row(i, pt);
+      piece_score += eval_partial_board(board_row);
+   }
+
+   return piece_score;
+}
+
+int Board2::eval_ver_board_helper(PieceType pt)
+{
+   int piece_score = 0;
+   _uint64_ board_col;
+   for (int i = 0; i < 14; i++) {
+      board_col = get_ver_col(i, pt);
+      piece_score += eval_partial_board(board_col);
+   }
+
+   return piece_score;
+}
+
+int Board2::eval_slash_board_helper(PieceType pt)
+{
+   int piece_score = 0;
+   _uint64_ board_slash;
+   for (int i = 4; i <= 14; i++) {
+      board_slash = get_slash_bits(i, true, pt);
+      piece_score += eval_partial_board(board_slash);
+   }
+
+   for (int i = 1; i <= 10; i++) {
+      board_slash = get_slash_bits(i, false, pt);
+      piece_score += eval_partial_board(board_slash);
+   }
+
+   return piece_score;
+}
+
+int Board2::eval_backslash_board_helper(PieceType pt)
+{
+   int piece_score = 0;
+   _uint64_ board_backslash;
+   for (int i = 4; i <=14; i++) {
+      board_backslash = get_backslash_bits(i, true, pt);
+      piece_score += eval_partial_board(board_backslash);
+   }
+
+   for (int i = 1; i <=10; i++) {
+      board_backslash = get_backslash_bits(i, false, pt);
+      piece_score += eval_partial_board(board_backslash);
+   }
+   return piece_score;
+}
+
+int Board2::eval_board()
+{
+   int white_score = eval_hor_board_helper(PieceType::white);
+   white_score += eval_ver_board_helper(PieceType::white);
+   white_score += eval_slash_board_helper(PieceType::white);
+   white_score += eval_backslash_board_helper(PieceType::white);
+
+   int black_score = eval_hor_board_helper(PieceType::black);
+   black_score += eval_ver_board_helper(PieceType::black);
+   black_score += eval_slash_board_helper(PieceType::black);
+   black_score += eval_backslash_board_helper(PieceType::black);
+
+   int board_score = 0;
+   if (m_is_computer_black) {
+      board_score = black_score - white_score;
+   }
+   else {
+      board_score = white_score - black_score;
+   }
+
+   return board_score;
+}
+

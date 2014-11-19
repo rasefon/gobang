@@ -22,7 +22,7 @@ namespace BetterBoard
 {
    typedef unsigned long long _uint64_;
 
-   static int s_patterns[] = {
+   static _uint64_ s_patterns[] = {
       // ccccc
       0x1f,
       // -cccc, c-ccc, cc-cc, ccc-c, cccc-, -ccc-, c--cc, -c-cc, -cc-c, c-cc-, cc-c-, c-c-c
@@ -31,6 +31,14 @@ namespace BetterBoard
       0x06, 0x11, 0x0a, 0x12, 0x09,
       // -c-
       0x02
+   };
+   static const int s_patterns_num = 19;
+
+   static int s_lshift_count[] = {
+      10,
+      10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+      11, 10, 10, 10, 10,
+      12
    };
 
    static int s_score[] = {
@@ -83,6 +91,7 @@ namespace BetterBoard
       _uint64_ m_black_piece[4];
       // global mask bitmap
       _uint64_ m_mask[4][64];
+      bool m_is_computer_black;
 
    private:
       inline _uint64_ get_mask(int i, int j, int& block_index) {
@@ -94,6 +103,8 @@ namespace BetterBoard
 
    public:
       Board2();
+      void set_computer_as_white() { m_is_computer_black = false;}
+      void set_computer_as_black() { m_is_computer_black = true;}
       static void test_board2();
 
    private:
@@ -111,5 +122,15 @@ namespace BetterBoard
       _uint64_ get_ver_col(int col, PieceType pt);
       _uint64_ get_slash_bits(int row, bool up, PieceType pt);
       _uint64_ get_backslash_bits(int row, bool up, PieceType pt);
+
+      int eval_partial_board(_uint64_ partial_board);
+      int eval_board();
+      int eval_hor_board_helper(PieceType pt);
+      int eval_ver_board_helper(PieceType pt);
+      int eval_slash_board_helper(PieceType pt);
+      int eval_backslash_board_helper(PieceType pt);
+
+      int alpha_beta_max(int depth, int alpha, int beta);
+      int alpha_beta_min(int depth, int alpha, int beta);
    };
 }
