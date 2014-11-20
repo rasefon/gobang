@@ -1,10 +1,11 @@
 #include "stdafx.h"
 #include "Board2.h"
 #include <iostream>
+#include <time.h>
 
 using namespace BetterBoard;
 
-Board2::Board2():m_is_computer_black(true)
+Board2::Board2():m_is_computer_black(true), m_is_black_win(false), m_is_white_win(false)
 {
    init();
 }
@@ -65,6 +66,26 @@ bool Board2::is_occupied(int block_index, _uint64_ mask, PieceType pt)
       }
    }
 
+   return false;
+}
+
+bool Board2::is_occupied(int i, int j, PieceType pt)
+{
+   int block_index;
+   _uint64_ mask = get_mask(i, j, block_index);
+   return is_occupied(block_index, mask, pt);
+}
+
+bool Board2::is_occupied(int i, int j)
+{
+   if (is_occupied(i, j, PieceType::white)) {
+      return true;
+   } 
+   
+   if (is_occupied(i, j, PieceType::black)) {
+      return true;
+   }
+  
    return false;
 }
 
@@ -183,7 +204,8 @@ void Board2::get_steps_from_center_step(int i, int j, set<int>& steps)
 
 void Board2::test_board2()
 {
-   Board2 b2;
+   clock_t begin = clock();
+   /*Board2 b2;
    b2.update_grid_status(13,13,PieceType::white);
    b2.update_grid_status(13,14,PieceType::white);
    b2.update_grid_status(2,11,PieceType::black);
@@ -202,7 +224,7 @@ void Board2::test_board2()
    _uint64_ s1 = b2.get_slash_bits(13, true, PieceType::black);
    _uint64_ s2 = b2.get_slash_bits(5, false, PieceType::white);
    _uint64_ bs1 = b2.get_backslash_bits(3, false, PieceType::white);
-   _uint64_ bs2 = b2.get_backslash_bits(6, true, PieceType::black);
+   _uint64_ bs2 = b2.get_backslash_bits(6, true, PieceType::black);*/
 
 
    Board2 b3;
@@ -218,7 +240,10 @@ void Board2::test_board2()
    cout << "score: " << score << endl;
    StepsPair sp = b3.m_next_best_steps;
    cout << "next step: (" << sp.step1.i << ", "  <<sp.step1.j << ") (" << sp.step2.i << ", " << sp.step2.j << ")" << endl;
+   b3.print_board();
 
+   clock_t end = clock();
+   cout << end-begin << endl;
    cout<<"placeholder"<<endl;
 }
 
@@ -415,17 +440,17 @@ inline void Board2::save_board(const StepsPair& next_steps)
    m_steps_stack.push(next_steps);
 }
 
-void Board2::restore_board(PieceType pt)
+void Board2::restore_board()
 {
    StepsPair sp = m_steps_stack.top();
    m_steps_stack.pop();
-   update_grid_status(sp.step1.i, sp.step1.j, pt);
-   update_grid_status(sp.step2.i, sp.step2.j, pt);
+   update_grid_status(sp.step1.i, sp.step1.j, PieceType::empty);
+   update_grid_status(sp.step2.i, sp.step2.j, PieceType::empty);
 }
 
 int Board2::alpha_beta_max(int depth, int alpha, int beta)
 {
-   if (depth == 0) {
+   if (depth == 0 || is_game_over()) {
       return eval_board();
    }
 
@@ -437,7 +462,7 @@ int Board2::alpha_beta_max(int depth, int alpha, int beta)
       save_board(*sp);
       update_grid_status(sp->step1.i, sp->step1.j, pt);
       int score = alpha_beta_min(depth-1, alpha, beta);
-      restore_board(pt);
+      restore_board();
 
       if (score >= beta) {
          alpha = score;
@@ -464,7 +489,7 @@ Exit:
 
 int Board2::alpha_beta_min(int depth, int alpha, int beta)
 {
-   if (depth == 0) {
+   if (depth == 0 || is_game_over()) {
       return eval_board();
    }
 
@@ -477,7 +502,7 @@ int Board2::alpha_beta_min(int depth, int alpha, int beta)
       save_board(*sp);
       update_grid_status(sp->step1.i, sp->step1.j, pt);
       int score = alpha_beta_max(depth-1, alpha, beta);
-      restore_board(pt);
+      restore_board();
 
       if (score <= alpha) {
          beta = score;
@@ -499,3 +524,220 @@ Exit:
    return beta;
 }
 
+bool Board2::is_game_over()
+{
+   _uint64_  partial_board;
+   //horizontal
+   for (int i = 0; i <= 14; i++) {
+      partial_board = get_hor_row(i, PieceType::white);
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_hor_row(i, PieceType::black);
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   //vertical
+   for (int i = 0; i <= 14; i++) {
+      partial_board = get_ver_col(i, PieceType::white); 
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_ver_col(i, PieceType::black); 
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   //slash
+   for (int i = 4; i <= 14; i++) {
+      partial_board = get_slash_bits(i, true, PieceType::white);
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_slash_bits(i, true, PieceType::black);
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   for (int i = 1; i <=10; i++) {
+      partial_board = get_slash_bits(i, false, PieceType::white);
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_slash_bits(i, false, PieceType::black);
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   //backslash
+   for (int i = 4; i <= 14; i++) {
+      partial_board = get_backslash_bits(i, true, PieceType::white);
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_backslash_bits(i, true, PieceType::black);
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   for (int i = 1; i <=10; i++) {
+      partial_board = get_backslash_bits(i, false, PieceType::white);
+      if (game_over_checker_helper(partial_board, PieceType::white)) {
+         return true;
+      }
+
+      partial_board = get_backslash_bits(i, false, PieceType::black);
+      if (game_over_checker_helper(partial_board, PieceType::black)) {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+bool Board2::game_over_checker_helper(_uint64_ partial_board, PieceType pt)
+{
+   _uint64_ pattern = s_patterns[0];
+   for (int ls_count = 0; ls_count < s_lshift_count[0]; ls_count++) {
+      if ((partial_board & pattern) == pattern) {
+         if (pt == PieceType::white) {
+            m_is_white_win = true;
+         }
+         else if (pt == PieceType::black) {
+            m_is_black_win = true;
+         }
+
+         return true;
+      }
+   }
+   return false;
+}
+
+void Board2::print_board()
+{
+   cout<<"   ";
+   for (int i = 0; i < 15; i++) {
+      if (i<10) {
+         cout<<i<<"  ";
+      }
+      else {
+         cout<<i<<" ";
+      }
+   }
+   cout<<endl;
+
+   for (int i = 0; i < 15; i++) {
+      if (i < 10) 
+         cout<<i<<"  ";
+      else
+         cout<<i<<" ";
+
+      for (int j = 0; j < 15; j++) {
+         if (is_occupied(i, j, PieceType::white)) {
+            cout<<"o"<<"  ";
+         }
+         else if (is_occupied(i, j, PieceType::black)) {
+            cout<<"x"<<"  ";
+         }
+         else {
+            cout<<"-"<<"  ";
+         }
+      }
+      cout<<endl;
+   }
+}
+
+void Board2::game()
+{
+   char buf[6];
+   //b1.self_gamming();
+   print_board();
+   while (!is_game_over())
+   {
+      Step s1, s2;
+      for (int i=0; i<2; i++) {
+         cout << "enter 2 (i,j), for example 2,3" << endl;
+         memset(buf, 0, 6);
+         cin >> buf;
+         if (i == 0) {
+            s1.i = atoi(&buf[0]);
+
+            int next = 1;
+            while(buf[next++]!=',');
+
+            s1.j = atoi(&buf[next]);
+
+            while(is_occupied(s1.i, s1.j)) {
+               cout << "invalid input!" <<endl;
+               memset(buf, 0, 6);
+               cin >> buf;
+
+               next = 1;
+               while(buf[next++]!=',');
+
+               s1.i = atoi(&buf[0]);
+               s1.j = atoi(&buf[next]);
+            }
+         }
+         else {
+            int i = atoi(&buf[0]);
+
+            int next = 1;
+            while(buf[next++]!=',');
+
+            int j = atoi(&buf[next]);
+
+            while(is_sibling(s1.i, s1.j, i, j) || is_occupied(i, j)) {
+               cout << "invalid input!" <<endl;
+               memset(buf, 0, 6);
+               cin >> buf;
+
+               next = 1;
+               while(buf[next++]!=',');
+
+               i = atoi(&buf[0]);
+               j = atoi(&buf[next]);
+            }
+            s2.i = i;
+            s2.j = j;
+         }
+      }
+      update_grid_status(s1.i, s1.j, PieceType::black);
+      update_grid_status(s2.i, s2.j, PieceType::black);
+      if (is_game_over()) {
+         print_board();
+         break;
+      }
+      print_board();
+
+      int potential_score = alpha_beta_max(DEPTH, -_INFINITE_, _INFINITE_);
+      StepsPair& ts = m_next_best_steps;
+      update_grid_status(ts.step1.i, ts.step1.j, PieceType::white);
+      update_grid_status(ts.step2.i, ts.step2.j, PieceType::white);
+      print_board();
+      cout << "white steps: (" << ts.step1.i <<","<<ts.step1.j<<") ("<<ts.step2.i<<","<<ts.step2.j<<")" <<endl;
+      cout << "white potential score: " << potential_score << endl;
+      cout << endl;
+   }
+
+   if (m_is_black_win) {
+      cout << "black wins" << endl;
+   }
+   else if (m_is_white_win) {
+      cout << "white wins" << endl;
+   }
+   else {
+      cout << "bug!" << endl;
+   }
+}

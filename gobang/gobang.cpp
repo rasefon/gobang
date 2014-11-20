@@ -814,10 +814,7 @@ void Board::print_board()
          cout<<i<<" ";
 
       for (int j = 0; j < 15; j++) {
-         if (j < 10) 
-            cout<<m_bb[i][j]<<"  ";
-         else
-            cout<<m_bb[i][j]<<"  ";
+         cout<<m_bb[i][j]<<"  ";
       }
       cout<<endl;
    }
@@ -975,7 +972,11 @@ int _tmain(int argc, _TCHAR* argv[])
    //b1.update_grid_status(7, 9, 'x');
 
    //testing
-   BetterBoard::Board2::test_board2();
+   //BetterBoard::Board2::test_board2();
+
+   BetterBoard::Board2 board;
+   board.set_computer_as_white();
+   board.game();
    
    clock_t end = clock();
    cout << end-begin << endl;

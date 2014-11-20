@@ -14,9 +14,9 @@ using namespace std;
 #define _IMPOSSIBLE_ 2147483647
 #define WIN_SCORE 100000
 
-#define STEP_INDEX(i,j) (i*100+j)
-#define I_FROM_INDEX(index) (index/100)
-#define J_FROM_INDEX(index) (index%100)
+#define STEP_INDEX(i,j) ((i*128)+j)
+#define I_FROM_INDEX(index) (index/128)
+#define J_FROM_INDEX(index) (index&0x7f)
 
 namespace BetterBoard
 {
@@ -104,6 +104,7 @@ namespace BetterBoard
       bool m_is_computer_black;
       stack<StepsPair> m_steps_stack;
       StepsPair m_next_best_steps;
+      bool m_is_black_win, m_is_white_win;
 
    private:
       inline _uint64_ get_mask(int i, int j, int& block_index) {
@@ -118,12 +119,16 @@ namespace BetterBoard
       void set_computer_as_white() { m_is_computer_black = false;}
       void set_computer_as_black() { m_is_computer_black = true;}
       static void test_board2();
+      void game();
+      void print_board();
 
    private:
       void init();
       // check if the (i,j) is occupied.
       bool is_occupied(int block_index, _uint64_ mask);
       bool is_occupied(int block_index, _uint64_ mask, PieceType pt);
+      bool is_occupied(int i, int j, PieceType pt);
+      bool is_occupied(int i, int j);
       bool is_sibling(int i, int j, int ii, int jj);
       void update_grid_status(int i, int j, PieceType pt);
       void generate_next_step_pair(vector<StepsPair*>& sp_vector);
@@ -146,6 +151,8 @@ namespace BetterBoard
       int alpha_beta_min(int depth, int alpha, int beta);
 
       void save_board(const StepsPair& next_steps);
-      inline void restore_board(PieceType pt);
+      inline void restore_board();
+      bool is_game_over();
+      bool game_over_checker_helper(_uint64_ partial_board, PieceType pt);
    };
 }
