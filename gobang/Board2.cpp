@@ -206,9 +206,18 @@ void Board2::test_board2()
 
 
    Board2 b3;
+   b3.set_computer_as_white();
    b3.update_grid_status(7, 7, PieceType::black);
    b3.update_grid_status(7, 9, PieceType::black);
+   b3.update_grid_status(7, 8, PieceType::white);
+   b3.update_grid_status(7, 10, PieceType::white);
+   b3.update_grid_status(8, 7, PieceType::black);
+   b3.update_grid_status(8, 9, PieceType::black);
+   int ps = b3.alpha_beta_max(DEPTH, -_INFINITE_, _INFINITE_);
    int score = b3.eval_board();
+   cout << "score: " << score << endl;
+   StepsPair sp = b3.m_next_best_steps;
+   cout << "next step: (" << sp.step1.i << ", "  <<sp.step1.j << ") (" << sp.step2.i << ", " << sp.step2.j << ")" << endl;
 
    cout<<"placeholder"<<endl;
 }
@@ -399,5 +408,94 @@ int Board2::eval_board()
    }
 
    return board_score;
+}
+
+inline void Board2::save_board(const StepsPair& next_steps)
+{
+   m_steps_stack.push(next_steps);
+}
+
+void Board2::restore_board(PieceType pt)
+{
+   StepsPair sp = m_steps_stack.top();
+   m_steps_stack.pop();
+   update_grid_status(sp.step1.i, sp.step1.j, pt);
+   update_grid_status(sp.step2.i, sp.step2.j, pt);
+}
+
+int Board2::alpha_beta_max(int depth, int alpha, int beta)
+{
+   if (depth == 0) {
+      return eval_board();
+   }
+
+   PieceType pt = m_is_computer_black ? PieceType::black : PieceType::white;
+   vector<StepsPair*> sp_vector;
+   generate_next_step_pair(sp_vector);
+   for (size_t i = 0; i < sp_vector.size(); i++) {
+      StepsPair *sp = sp_vector[i];
+      save_board(*sp);
+      update_grid_status(sp->step1.i, sp->step1.j, pt);
+      int score = alpha_beta_min(depth-1, alpha, beta);
+      restore_board(pt);
+
+      if (score >= beta) {
+         alpha = score;
+         goto Exit;
+      }
+
+      if (score > alpha) {
+         alpha = score;
+         if (depth == DEPTH) {
+            m_next_best_steps = *sp;
+         }
+      }
+   }
+
+Exit:
+   vector<StepsPair*>::iterator it = sp_vector.begin();
+   for (; it != sp_vector.end(); it++) {
+      delete *it;
+   }
+   sp_vector.clear();
+
+   return alpha;
+}
+
+int Board2::alpha_beta_min(int depth, int alpha, int beta)
+{
+   if (depth == 0) {
+      return eval_board();
+   }
+
+   //be care!!!
+   PieceType pt = m_is_computer_black ? PieceType::white : PieceType::black;
+   vector<StepsPair*> sp_vector;
+   generate_next_step_pair(sp_vector);
+   for (size_t i = 0; i < sp_vector.size(); i++) {
+      StepsPair *sp = sp_vector[i];
+      save_board(*sp);
+      update_grid_status(sp->step1.i, sp->step1.j, pt);
+      int score = alpha_beta_max(depth-1, alpha, beta);
+      restore_board(pt);
+
+      if (score <= alpha) {
+         beta = score;
+         goto Exit;
+      }
+
+      if (score < beta) {
+         beta = score;
+      }
+   }
+
+Exit:
+   vector<StepsPair*>::iterator it = sp_vector.begin();
+   for (; it != sp_vector.end(); it++) {
+      delete *it;
+   }
+   sp_vector.clear();
+
+   return beta;
 }
 
