@@ -8,6 +8,7 @@
 using namespace std;
 
 #define POTENTIAL_GEP 1
+// must >= 3
 #define DEPTH 3
 
 #define _INFINITE_ 2147483646
