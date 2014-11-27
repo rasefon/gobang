@@ -707,6 +707,18 @@ int Board::parallel_alpha_beta_max(int depth, int alpha, int beta, bool is_black
       }
    }
 
+   concurrent_vector<BoardContext*>::iterator it = bc_buff.begin();
+   for (; it != bc_buff.end(); it++) {
+      delete *it;
+   }
+   bc_buff.clear();
+
+   concurrent_vector<StepsWithValue*>::iterator it2 = svs.begin();
+   for (; it2 != svs.end(); it2++) {
+      delete *it2;
+   }
+   svs.clear();
+
    return best_score;
 }
 
