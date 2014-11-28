@@ -141,6 +141,8 @@ public:
    void self_gamming();
    void game();
 
+   void test();
+
    TwoSteps& best_steps() { return m_next_best_steps; }
 private:
    void get_steps_from_center_step(int i, int j, char grid, vector<int>& steps);
@@ -217,9 +219,10 @@ static int kmp_matcher(char *target, int target_len, char *pattern, int pattern_
    int q = 0; // pattern index;
    int p = 0; // target index;
    while (p < target_len) {
-      while (target[p] != pattern[q] && p < target_len)
+      while (q == 0 && target[p] != pattern[q] && p < target_len) {
          p++;
-
+      }
+      
       if (p == target_len)
          return pattern_matched;
 
@@ -1043,6 +1046,31 @@ void Board::game()
    }
 }
 
+void Board::test()
+{
+   update_grid_status(7,7,'x');
+   update_grid_status(8,9,'x');
+   update_grid_status(8,8,'o');
+   update_grid_status(6,7,'o');
+   update_grid_status(7,8,'x');
+   update_grid_status(9,8,'x');
+   update_grid_status(9,7,'o');
+   update_grid_status(7,9,'o');
+   update_grid_status(10,6,'x');
+   update_grid_status(11,9,'x');
+   update_grid_status(10,7,'o');
+   update_grid_status(6,10,'o');
+   update_grid_status(5,11,'x');
+   update_grid_status(5,6,'x');
+   update_grid_status(6,9,'o');
+   update_grid_status(4,7,'o');
+   update_grid_status(6,8,'x');
+   update_grid_status(6,6,'x');
+   update_grid_status(5,7,'o');
+   update_grid_status(3,7,'o');
+   is_game_over();
+}
+
 // some unit test functions
 void test_kmp_matcher();
 
@@ -1053,6 +1081,7 @@ int _tmain(int argc, _TCHAR* argv[])
    compute_failure_function();
 
    Board b1;
+   //b1.test();
    b1.game();
 
    //testing
